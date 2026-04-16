@@ -80,6 +80,59 @@ const TreeView = (() => {
         row.appendChild(radio);
       }
 
+      if (node.type === "partie" && callbacks && callbacks.onPartyToggle) {
+        const email = ((node.data.Personne || {}).Email || "").trim();
+        const cb = document.createElement("input");
+        cb.type = "checkbox";
+        cb.className = "tree-party-check";
+        cb.disabled = !email;
+        cb.checked = !!node._selected;
+        cb.addEventListener("change", (ev) => {
+          ev.stopPropagation();
+          node._selected = cb.checked;
+          callbacks.onPartyToggle(node.data, cb.checked, node._recipient || "to");
+        });
+        row.insertBefore(cb, row.firstChild);
+
+        const radios = document.createElement("span");
+        radios.className = "tree-party-radios";
+        for (const [val, lbl] of [["to", "À"], ["cc", "Cc"], ["bcc", "Cci"]]) {
+          const w = document.createElement("label");
+          const r = document.createElement("input");
+          r.type = "radio";
+          r.name = `party-${node.id}`;
+          r.value = val;
+          r.disabled = !email;
+          r.checked = (node._recipient || "to") === val;
+          r.addEventListener("change", (ev) => {
+            ev.stopPropagation();
+            if (r.checked) {
+              node._recipient = val;
+              if (node._selected && callbacks.onPartyToggle) {
+                callbacks.onPartyToggle(node.data, true, val);
+              }
+            }
+          });
+          w.appendChild(r);
+          w.appendChild(document.createTextNode(lbl));
+          radios.appendChild(w);
+        }
+        row.appendChild(radios);
+      }
+
+      if (node.type === "document" && callbacks && callbacks.onDocumentToggle) {
+        const cb = document.createElement("input");
+        cb.type = "checkbox";
+        cb.className = "tree-doc-check";
+        cb.checked = !!node._selected;
+        cb.addEventListener("change", (ev) => {
+          ev.stopPropagation();
+          node._selected = cb.checked;
+          callbacks.onDocumentToggle(node.data, cb.checked);
+        });
+        row.insertBefore(cb, row.firstChild);
+      }
+
       el.appendChild(row);
 
       if (node.expanded && Array.isArray(node.children)) {
