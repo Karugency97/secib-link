@@ -219,6 +219,17 @@ const SecibAPI = (() => {
   }
 
   /**
+   * Crée un répertoire dans un dossier.
+   * Endpoint best-guess (pattern SaveDocument). Si l'API renvoie 404/400,
+   * l'appelant (panel.js) bascule sur le fallback racine du dossier.
+   */
+  async function creerRepertoire(dossierId, libelle) {
+    const did = Number(dossierId);
+    const body = { DossierId: did, Libelle: String(libelle).trim() };
+    return apiCall("POST", "/Document/SaveRepertoire", { body });
+  }
+
+  /**
    * Liste les parties d'un dossier (Client / Adversaire / Juridiction / Correspondant).
    * Chaque PartieApiDto embarque la Personne avec ses coordonnées (Email, Téléphone, ...).
    */
@@ -353,6 +364,7 @@ const SecibAPI = (() => {
     getDossiersPersonne,
     getDossierDetail,
     getRepertoiresDossier,
+    creerRepertoire,
     getPartiesDossier,
     getDocumentsDossier,
     getDocumentContent,
