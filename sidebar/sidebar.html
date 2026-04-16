@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SECIB Link</title>
+  <link rel="stylesheet" href="sidebar.css">
+</head>
+<body>
+  <!-- En-tête -->
+  <header class="header">
+    <div class="header-brand">
+      <span class="header-icon">S</span>
+      <h1>SECIB Link</h1>
+    </div>
+    <button type="button" id="btn-settings" class="btn-icon" title="Configuration API">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+        <path d="M8 4.754a3.246 3.246 0 1 0 0 6.492 3.246 3.246 0 0 0 0-6.492zM5.754 8a2.246 2.246 0 1 1 4.492 0 2.246 2.246 0 0 1-4.492 0z"/>
+        <path d="M9.796 1.343c-.527-1.79-3.065-1.79-3.592 0l-.094.319a.873.873 0 0 1-1.255.52l-.292-.16c-1.64-.892-3.433.902-2.54 2.541l.159.292a.873.873 0 0 1-.52 1.255l-.319.094c-1.79.527-1.79 3.065 0 3.592l.319.094a.873.873 0 0 1 .52 1.255l-.16.292c-.892 1.64.901 3.434 2.541 2.54l.292-.159a.873.873 0 0 1 1.255.52l.094.319c.527 1.79 3.065 1.79 3.592 0l.094-.319a.873.873 0 0 1 1.255-.52l.292.16c1.64.892 3.434-.901 2.54-2.541l-.159-.292a.873.873 0 0 1 .52-1.255l.319-.094c1.79-.527 1.79-3.065 0-3.592l-.319-.094a.873.873 0 0 1-.52-1.255l.16-.292c.892-1.64-.902-3.433-2.541-2.54l-.292.159a.873.873 0 0 1-1.255-.52l-.094-.319zm-2.633.283c.246-.835 1.428-.835 1.674 0l.094.319a1.873 1.873 0 0 0 2.693 1.115l.291-.16c.764-.415 1.6.42 1.184 1.185l-.159.292a1.873 1.873 0 0 0 1.116 2.692l.318.094c.835.246.835 1.428 0 1.674l-.319.094a1.873 1.873 0 0 0-1.115 2.693l.16.291c.415.764-.42 1.6-1.185 1.184l-.291-.159a1.873 1.873 0 0 0-2.693 1.116l-.094.318c-.246.835-1.428.835-1.674 0l-.094-.319a1.873 1.873 0 0 0-2.692-1.115l-.292.16c-.764.415-1.6-.42-1.184-1.185l.159-.291A1.873 1.873 0 0 0 1.945 8.93l-.319-.094c-.835-.246-.835-1.428 0-1.674l.319-.094A1.873 1.873 0 0 0 3.06 4.377l-.16-.292c-.415-.764.42-1.6 1.185-1.184l.292.159a1.873 1.873 0 0 0 2.692-1.116l.094-.318z"/>
+      </svg>
+    </button>
+  </header>
+
+  <!-- Panneau de configuration (masqué par défaut) -->
+  <section id="settings-panel" class="settings-panel hidden">
+    <h2>Configuration API SECIB</h2>
+    <div class="form-group">
+      <label for="input-base-url">URL API</label>
+      <input type="url" id="input-base-url" placeholder="https://secibneo.secib.fr/8.2.1">
+    </div>
+    <div class="form-group">
+      <label for="input-cabinet-id">Cabinet ID (GUID)</label>
+      <input type="text" id="input-cabinet-id" placeholder="ex: 12345678-abcd-...">
+    </div>
+    <div class="form-group">
+      <label for="input-client-id">Client ID</label>
+      <input type="text" id="input-client-id" placeholder="Votre Client ID OAuth2">
+    </div>
+    <div class="form-group">
+      <label for="input-client-secret">Client Secret</label>
+      <input type="password" id="input-client-secret" placeholder="Votre Client Secret">
+    </div>
+    <div class="form-actions">
+      <button type="button" id="btn-save-settings" class="btn btn-primary">Enregistrer</button>
+      <button type="button" id="btn-cancel-settings" class="btn btn-secondary">Fermer</button>
+    </div>
+    <div id="settings-feedback" class="settings-feedback hidden"></div>
+  </section>
+
+  <!-- Zone expéditeur -->
+  <section id="sender-info" class="sender-card">
+    <div class="sender-placeholder">
+      <p>Sélectionnez un message pour afficher les informations SECIB.</p>
+    </div>
+  </section>
+
+  <!-- Bandeau "déjà enregistré" (masqué par défaut) -->
+  <div id="saved-banner" class="saved-banner hidden">
+    <span class="saved-banner-icon">✓</span>
+    <span>Mail déjà enregistré dans SECIB</span>
+  </div>
+
+  <!-- Barre de recherche manuelle de dossier -->
+  <div class="search-bar">
+    <input type="search" id="search-input" placeholder="Chercher un dossier (code ou nom)…" autocomplete="off">
+    <button type="button" id="btn-search-clear" class="btn-search-clear hidden" title="Effacer">&times;</button>
+  </div>
+
+  <!-- Zone résultats -->
+  <section id="results" class="results">
+    <!-- Les dossiers apparaîtront ici -->
+  </section>
+
+  <!-- Zone de chargement -->
+  <div id="loader" class="loader hidden">
+    <div class="spinner"></div>
+    <p>Recherche en cours...</p>
+  </div>
+
+  <!-- Zone d'erreur -->
+  <div id="error-zone" class="error-zone hidden"></div>
+
+  <!-- Mini-modale d'enregistrement -->
+  <div id="save-modal" class="modal hidden">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 id="save-modal-title">Enregistrer dans</h3>
+        <button type="button" id="btn-modal-close" class="btn-icon">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label for="select-repertoire">Répertoire</label>
+          <select id="select-repertoire">
+            <option value="">Racine du dossier</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="input-filename">Nom du fichier</label>
+          <input type="text" id="input-filename" placeholder="Mail.eml">
+        </div>
+
+        <!-- Toggle mode avancé pièces jointes -->
+        <div class="form-check">
+          <input type="checkbox" id="check-advanced">
+          <label for="check-advanced">Mode avancé : gérer les pièces jointes séparément</label>
+        </div>
+
+        <!-- Section avancée (masquée par défaut) -->
+        <div id="advanced-section" class="advanced-section hidden">
+          <div class="form-check">
+            <input type="checkbox" id="check-strip-attachments">
+            <label for="check-strip-attachments">.eml allégé (sans les pièces jointes)</label>
+          </div>
+
+          <div id="attachments-loading" class="attachments-loading hidden">Chargement des pièces jointes…</div>
+
+          <div id="attachments-empty" class="attachments-empty hidden">
+            Ce mail ne contient aucune pièce jointe.
+          </div>
+
+          <table id="attachments-table" class="attachments-table hidden">
+            <thead>
+              <tr>
+                <th></th>
+                <th>Pièce jointe</th>
+                <th>Dossier</th>
+                <th>Répertoire</th>
+              </tr>
+            </thead>
+            <tbody id="attachments-tbody"></tbody>
+          </table>
+        </div>
+
+        <!-- Progression upload -->
+        <div id="save-progress" class="save-progress hidden">
+          <div class="save-progress-bar">
+            <div id="save-progress-fill" class="save-progress-fill" style="width: 0%"></div>
+          </div>
+          <div id="save-progress-label" class="save-progress-label"></div>
+        </div>
+
+        <div id="save-feedback" class="settings-feedback hidden"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" id="btn-modal-cancel" class="btn btn-secondary">Annuler</button>
+        <button type="button" id="btn-modal-save" class="btn btn-primary">Enregistrer</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="secib-api.js"></script>
+  <script src="sidebar.js"></script>
+</body>
+</html>
