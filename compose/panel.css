@@ -472,3 +472,113 @@ body {
 }
 
 .hidden { display: none !important; }
+
+/* ─── TreeView ───────────────────────────────────────────── */
+
+.tree-root {
+  font-size: 13px;
+}
+.tree-empty,
+.tree-loading,
+.tree-error {
+  padding: 12px;
+  color: #666;
+  font-style: italic;
+}
+.tree-error { color: #c00; }
+
+.tree-node {
+  padding: 2px 0;
+}
+.tree-node.depth-0 { margin-top: 4px; }
+.tree-node .tree-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 6px;
+  border-radius: 4px;
+}
+.tree-node .tree-row:hover {
+  background: #f4f6fa;
+}
+.tree-toggle {
+  display: inline-block;
+  width: 14px;
+  color: #888;
+  cursor: pointer;
+  user-select: none;
+  font-size: 10px;
+}
+.tree-label {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  line-height: 1.2;
+}
+.tree-label.selectable {
+  cursor: pointer;
+}
+.tree-label.selectable:hover .tn-label {
+  text-decoration: underline;
+  color: #0055b3;
+}
+.tn-label { font-weight: 500; }
+.tn-sub { font-size: 11px; color: #777; }
+
+.tree-children {
+  margin-left: 16px;
+  border-left: 1px dashed #dde2ea;
+  padding-left: 8px;
+}
+
+.tree-node.type-dossier > .tree-row .tn-label { color: #0055b3; }
+.tree-node.type-repertoire > .tree-row .tn-label { color: #5b3e00; }
+.tree-node.type-partie > .tree-row .tn-label,
+.tree-node.type-document > .tree-row .tn-label { font-weight: 400; }
+
+.tree-node.loading > .tree-row::after {
+  content: " …";
+  color: #888;
+}
+
+.tree-radio-archive {
+  margin-left: 8px;
+}
+.tree-party-radios {
+  display: inline-flex;
+  gap: 6px;
+  margin-left: 8px;
+}
+.tree-party-radios label {
+  font-size: 11px;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+/* Bloc "Destination enregistrement mail" */
+.archive-destination {
+  margin-top: 12px;
+  padding: 10px 12px;
+  background: #f0f7ff;
+  border: 1px solid #cfe2ff;
+  border-radius: 6px;
+  font-size: 13px;
+}
+.archive-destination .ad-title {
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+.archive-destination .ad-target {
+  font-family: monospace;
+  color: #0055b3;
+}
+.archive-destination.warn {
+  background: #fff7e6;
+  border-color: #ffe0a6;
+}
+.archive-destination.disabled {
+  background: #f4f6fa;
+  border-color: #e0e4ec;
+  color: #888;
+}
