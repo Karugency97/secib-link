@@ -1,0 +1,74 @@
+name: Update updates.json
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Récupérer infos de la release
+        id: rel
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ github.event.release.tag_name }}"
+          VERSION="${TAG#v}"
+          # Trouver le 1er asset .xpi de la release
+          ASSET_URL=$(gh release view "$TAG" --json assets --jq '.assets[] | select(.name | endswith(".xpi")) | .url' | head -1)
+          if [ -z "$ASSET_URL" ]; then
+            echo "::error::Aucun .xpi trouvé dans la release $TAG"
+            exit 1
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "asset_url=$ASSET_URL" >> "$GITHUB_OUTPUT"
+          echo "Tag: $TAG / Version: $VERSION / Asset: $ASSET_URL"
+
+      - name: Mettre à jour updates.json
+        run: |
+          python3 <<'PY'
+          import json, os
+          version = os.environ["VERSION"]
+          link    = os.environ["ASSET_URL"]
+          path = "updates.json"
+          with open(path) as f:
+              data = json.load(f)
+          addon_id = "secib-link@cabinet-npl.fr"
+          updates = data["addons"][addon_id]["updates"]
+          # Retirer une éventuelle entrée existante de cette version
+          updates = [u for u in updates if u.get("version") != version]
+          updates.append({"version": version, "update_link": link})
+          # Trier par version (sémver simple)
+          def vkey(u):
+              return tuple(int(p) for p in u["version"].split("."))
+          updates.sort(key=vkey)
+          data["addons"][addon_id]["updates"] = updates
+          with open(path, "w") as f:
+              json.dump(data, f, indent=2, ensure_ascii=False)
+              f.write("\n")
+          print("updates.json mis à jour pour", version)
+          PY
+        env:
+          VERSION: ${{ steps.rel.outputs.version }}
+          ASSET_URL: ${{ steps.rel.outputs.asset_url }}
+
+      - name: Commit + push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add updates.json
+          if git diff --cached --quiet; then
+            echo "Aucun changement à committer."
+            exit 0
+          fi
+          git commit -m "chore(updates): publication ${{ steps.rel.outputs.tag }}"
+          git push
