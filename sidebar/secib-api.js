@@ -353,6 +353,20 @@ const SecibAPI = (() => {
     return apiCall("POST", "/Document/SaveOrUpdateDocument", { body });
   }
 
+  /**
+   * Enregistre un mail RFC822 (.eml) dans un dossier SECIB.
+   * Thin wrapper sur saveDocument — expose l'intention dans le code appelant.
+   */
+  async function saveEmailMessage({ dossierId, repertoireId, emlBase64, fileName }) {
+    return saveDocument({
+      fileName,
+      dossierId,
+      repertoireId,
+      contentBase64: emlBase64,
+      isAnnexe: false
+    });
+  }
+
   return {
     getConfig,
     authenticate,
@@ -369,6 +383,7 @@ const SecibAPI = (() => {
     getDocumentsDossier,
     getDocumentContent,
     rechercherDossiers,
-    saveDocument
+    saveDocument,
+    saveEmailMessage
   };
 })();
