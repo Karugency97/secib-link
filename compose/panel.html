@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SECIB Link — Compose helper</title>
+  <link rel="stylesheet" href="panel.css">
+</head>
+<body>
+  <header class="header">
+    <div class="header-brand">
+      <span class="header-icon">S</span>
+      <h1>SECIB Link — Compose</h1>
+    </div>
+    <div id="compose-subject" class="compose-subject" title=""></div>
+  </header>
+
+  <div id="error-zone" class="error-zone hidden"></div>
+
+  <!-- Bloc 1 : recherche dossier -->
+  <section class="section">
+    <h2>Dossier SECIB</h2>
+    <div class="search-bar">
+      <input type="search" id="dossier-search" placeholder="Code ou nom du dossier…" autocomplete="off">
+      <div id="dossier-results" class="dossier-results hidden"></div>
+    </div>
+    <div id="dossier-card" class="dossier-card hidden">
+      <div class="dossier-top">
+        <span id="dc-code" class="dossier-ref"></span>
+        <button type="button" id="dc-clear" class="btn-link">Changer</button>
+      </div>
+      <div id="dc-nom" class="dossier-title"></div>
+      <div id="dc-meta" class="dossier-meta"></div>
+    </div>
+  </section>
+
+  <!-- Bloc 2 : parties -->
+  <section id="parties-section" class="section hidden">
+    <h2>Parties du dossier <span id="parties-count" class="count"></span></h2>
+    <div class="filter-row">
+      <button type="button" data-type-filter="all" class="filter-btn active">Tous</button>
+      <button type="button" data-type-filter="1" class="filter-btn">Client</button>
+      <button type="button" data-type-filter="2" class="filter-btn">Adversaire</button>
+      <button type="button" data-type-filter="3" class="filter-btn">Juridiction</button>
+      <button type="button" data-type-filter="4" class="filter-btn">Correspondant</button>
+    </div>
+    <div id="parties-loader" class="loader-inline hidden">Chargement…</div>
+    <div id="parties-empty" class="empty hidden">Aucune partie dans ce dossier.</div>
+    <table id="parties-table" class="data-table hidden">
+      <thead>
+        <tr>
+          <th></th>
+          <th>Nom &amp; email</th>
+          <th class="th-recipient">Destinataire</th>
+        </tr>
+      </thead>
+      <tbody id="parties-tbody"></tbody>
+    </table>
+  </section>
+
+  <!-- Bloc 3 : documents -->
+  <section id="documents-section" class="section hidden">
+    <h2>Documents du dossier <span id="documents-count" class="count"></span></h2>
+    <div class="filter-row">
+      <label class="filter-label" for="rep-filter">Répertoire</label>
+      <select id="rep-filter">
+        <option value="all">Tous les répertoires</option>
+      </select>
+    </div>
+    <div id="documents-loader" class="loader-inline hidden">Chargement…</div>
+    <div id="documents-empty" class="empty hidden">Aucun document dans ce dossier.</div>
+    <table id="documents-table" class="data-table hidden">
+      <thead>
+        <tr>
+          <th></th>
+          <th>Document</th>
+          <th class="th-meta">Date</th>
+        </tr>
+      </thead>
+      <tbody id="documents-tbody"></tbody>
+    </table>
+    <div id="size-summary" class="size-summary hidden">
+      <span id="size-text"></span>
+    </div>
+  </section>
+
+  <!-- Footer / actions -->
+  <div id="apply-progress" class="apply-progress hidden">
+    <div class="progress-bar"><div id="apply-fill" class="progress-fill"></div></div>
+    <div id="apply-label" class="progress-label"></div>
+  </div>
+  <div id="apply-feedback" class="feedback hidden"></div>
+
+  <footer class="footer">
+    <button type="button" id="btn-close" class="btn btn-secondary">Fermer</button>
+    <button type="button" id="btn-apply" class="btn btn-primary" disabled>Appliquer au mail</button>
+  </footer>
+
+  <script src="../sidebar/secib-api.js"></script>
+  <script src="panel.js"></script>
+</body>
+</html>

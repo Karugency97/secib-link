@@ -187,6 +187,35 @@ const SecibAPI = (() => {
   }
 
   /**
+   * Liste les parties d'un dossier (Client / Adversaire / Juridiction / Correspondant).
+   * Chaque PartieApiDto embarque la Personne avec ses coordonnées (Email, Téléphone, ...).
+   */
+  async function getPartiesDossier(dossierId) {
+    return apiCall("GET", "/Partie/Get", { query: { dossierId } });
+  }
+
+  /**
+   * Liste les documents d'un dossier (range max 50 par appel).
+   * Renvoie DocumentCompactApiDto[] : DocumentId, FileName, Extension, Date, RepertoireId, RepertoireLibelle, Type, IsAnnexe.
+   */
+  async function getDocumentsDossier(dossierId, limit = 50, offset = 0) {
+    return apiCall("GET", "/Document/GetListeDocument", {
+      query: {
+        "filtreDocument.dossierId": dossierId,
+        range: `${offset}-${offset + limit - 1}`
+      }
+    });
+  }
+
+  /**
+   * Récupère le contenu binaire d'un document encodé en base64.
+   * Renvoie DocumentContentApiDto : { DocumentId, FileName, Content (base64) }.
+   */
+  async function getDocumentContent(documentId) {
+    return apiCall("GET", "/Document/GetContentDocumentBase64", { query: { documentId } });
+  }
+
+  /**
    * Recherche libre de dossiers via POST /Dossier/GetDossiers (filtre Nom OU Code).
    * Si le terme est numérique on tente Code exact, sinon recherche par Nom.
    * Renvoie DossierDetailApiDto[].
@@ -232,6 +261,9 @@ const SecibAPI = (() => {
     getDossiersPersonne,
     getDossierDetail,
     getRepertoiresDossier,
+    getPartiesDossier,
+    getDocumentsDossier,
+    getDocumentContent,
     rechercherDossiers,
     saveDocument
   };

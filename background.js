@@ -1,66 +1,55 @@
 // SECIB Link — Background Script
 //
-// Architecture : fenêtre flottante persistante (browser.windows.create type:popup).
-// - Au clic sur l'icône message_display_action ou browser_action :
-//   - si la fenêtre SECIB Link existe → la focus + lui pousser le mail courant
-//   - sinon → la créer en passant ?messageId=… dans l'URL
-// - À chaque mail affiché (onMessageDisplayed) → si la fenêtre est ouverte,
-//   on lui pousse l'ID via tabs.sendMessage. La fenêtre se met à jour seule.
+// Deux fenêtres flottantes distinctes :
+// 1. Sidebar de lecture (message_display_action / browser_action) : panneau "dossiers liés à l'expéditeur"
+// 2. Compose helper (compose_action) : panneau "destinataires + PJ depuis un dossier SECIB"
+//
+// Chaque fenêtre est trackée séparément, peut être focus si déjà ouverte, et reçoit
+// le tabId du contexte courant via URL param + tabs.sendMessage.
 
 const SIDEBAR_URL = "sidebar/sidebar.html";
-const WIN_WIDTH = 440;
-const WIN_HEIGHT = 720;
+const COMPOSE_PANEL_URL = "compose/panel.html";
 
+const SIDEBAR_W = 440, SIDEBAR_H = 720;
+const COMPOSE_W = 520, COMPOSE_H = 760;
+
+// Sidebar lecture
 let linkWindowId = null;
 let linkTabId = null;
+
+// Compose helper
+let composeWindowId = null;
+let composePanelTabId = null;
 
 browser.runtime.onInstalled.addListener(() => {
   console.log("[SECIB Link] Extension installée.");
 });
 
-// Click sur l'icône depuis un mail affiché
+// ─── Sidebar lecture ─────────────────────────────────────────────────
+
 browser.messageDisplayAction.onClicked.addListener((tab) => {
   openOrFocusLinkWindow(tab);
 });
 
-// Click sur l'icône depuis la barre principale (sans mail forcément sélectionné)
 browser.browserAction.onClicked.addListener((tab) => {
   openOrFocusLinkWindow(tab);
 });
 
-// Quand l'utilisateur change de mail dans Thunderbird, pousser à la fenêtre ouverte
 browser.messageDisplay.onMessageDisplayed.addListener((tab, message) => {
   if (linkTabId === null || !message) return;
   browser.tabs.sendMessage(linkTabId, {
     type: "secib-link/setMessage",
     messageId: message.id
-  }).catch(() => {
-    // La fenêtre n'a peut-être pas encore son listener prêt — ignore
-  });
+  }).catch(() => {});
 });
 
-// Reset si la fenêtre flottante est fermée par l'utilisateur
-browser.windows.onRemoved.addListener((windowId) => {
-  if (windowId === linkWindowId) {
-    linkWindowId = null;
-    linkTabId = null;
-  }
-});
-
-/**
- * Ouvre la fenêtre flottante SECIB Link, ou la focus si déjà ouverte,
- * et lui passe le mail courant.
- */
 async function openOrFocusLinkWindow(sourceTab) {
   let messageId = null;
   try {
     const msg = await browser.messageDisplay.getDisplayedMessage(sourceTab.id);
     if (msg) messageId = msg.id;
-  } catch {
-    // Pas de mail affiché dans ce tab — la fenêtre s'ouvrira en attente
-  }
+  } catch {}
 
-  // Si déjà ouverte → focus + push du nouveau mail
   if (linkWindowId !== null) {
     try {
       await browser.windows.update(linkWindowId, { focused: true });
@@ -72,24 +61,74 @@ async function openOrFocusLinkWindow(sourceTab) {
       }
       return;
     } catch {
-      // La fenêtre n'existe plus côté OS, on la recrée
       linkWindowId = null;
       linkTabId = null;
     }
   }
 
-  // Création de la fenêtre flottante
   const url = browser.runtime.getURL(SIDEBAR_URL) +
     (messageId !== null ? `?messageId=${encodeURIComponent(messageId)}` : "");
 
   const win = await browser.windows.create({
     url,
     type: "popup",
-    width: WIN_WIDTH,
-    height: WIN_HEIGHT,
+    width: SIDEBAR_W,
+    height: SIDEBAR_H,
     allowScriptsToClose: true
   });
 
   linkWindowId = win.id;
   linkTabId = win.tabs && win.tabs[0] ? win.tabs[0].id : null;
 }
+
+// ─── Compose helper ──────────────────────────────────────────────────
+
+browser.composeAction.onClicked.addListener((tab) => {
+  openOrFocusComposeHelper(tab.id);
+});
+
+async function openOrFocusComposeHelper(composeTabId) {
+  // Si déjà ouverte → focus + bascule sur le compose actif
+  if (composeWindowId !== null) {
+    try {
+      await browser.windows.update(composeWindowId, { focused: true });
+      if (composePanelTabId !== null) {
+        browser.tabs.sendMessage(composePanelTabId, {
+          type: "secib-link/setComposeTab",
+          composeTabId
+        }).catch(() => {});
+      }
+      return;
+    } catch {
+      composeWindowId = null;
+      composePanelTabId = null;
+    }
+  }
+
+  const url = browser.runtime.getURL(COMPOSE_PANEL_URL) +
+    `?composeTabId=${encodeURIComponent(composeTabId)}`;
+
+  const win = await browser.windows.create({
+    url,
+    type: "popup",
+    width: COMPOSE_W,
+    height: COMPOSE_H,
+    allowScriptsToClose: true
+  });
+
+  composeWindowId = win.id;
+  composePanelTabId = win.tabs && win.tabs[0] ? win.tabs[0].id : null;
+}
+
+// ─── Reset si l'utilisateur ferme une fenêtre ────────────────────────
+
+browser.windows.onRemoved.addListener((windowId) => {
+  if (windowId === linkWindowId) {
+    linkWindowId = null;
+    linkTabId = null;
+  }
+  if (windowId === composeWindowId) {
+    composeWindowId = null;
+    composePanelTabId = null;
+  }
+});

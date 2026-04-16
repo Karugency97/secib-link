@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "SECIB Link",
-  "version": "1.0.2",
+  "version": "1.1.0",
   "description": "Panneau contextuel lié à l'API SECIB Neo — affiche les dossiers clients associés à l'expéditeur du mail sélectionné.",
   "author": "Cabinet NPL",
   "browser_specific_settings": {
@@ -16,6 +16,7 @@
     "messagesUpdate",
     "messagesTags",
     "accountsRead",
+    "compose",
     "storage",
     "https://secibneo.secib.fr/*",
     "https://api.secib.fr/*"
@@ -32,6 +33,13 @@
   },
   "browser_action": {
     "default_title": "SECIB Link",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "32": "icons/icon-32.png"
+    }
+  },
+  "compose_action": {
+    "default_title": "SECIB Link — Joindre depuis un dossier",
     "default_icon": {
       "16": "icons/icon-16.png",
       "32": "icons/icon-32.png"
