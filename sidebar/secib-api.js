@@ -197,14 +197,74 @@ const SecibAPI = (() => {
   /**
    * Liste les documents d'un dossier (range max 50 par appel).
    * Renvoie DocumentCompactApiDto[] : DocumentId, FileName, Extension, Date, RepertoireId, RepertoireLibelle, Type, IsAnnexe.
+   *
+   * ⚠️ L'API SECIB attend le filtre dans le BODY (même sur GET côté MCP Node), ce
+   * qui est interdit côté browser. On tente plusieurs variantes en cascade et on
+   * loggue chaque échec pour diagnostic.
    */
   async function getDocumentsDossier(dossierId, limit = 50, offset = 0) {
-    return apiCall("GET", "/Document/GetListeDocument", {
-      query: {
-        "filtreDocument.dossierId": dossierId,
-        range: `${offset}-${offset + limit - 1}`
+    const range = `${offset}-${offset + limit - 1}`;
+    const did = Number(dossierId);
+    const tentatives = [
+      {
+        nom: "v2 POST + body {DossierId}",
+        method: "POST",
+        opts: { version: "v2", body: { DossierId: did }, query: { range } }
+      },
+      {
+        nom: "v2 POST + body {dossierId}",
+        method: "POST",
+        opts: { version: "v2", body: { dossierId: did }, query: { range } }
+      },
+      {
+        nom: "v2 POST + body {filtreDocument:{dossierId}}",
+        method: "POST",
+        opts: { version: "v2", body: { filtreDocument: { dossierId: did } }, query: { range } }
+      },
+      {
+        nom: "v2 GET + ?filtreDocument.dossierId=N",
+        method: "GET",
+        opts: { version: "v2", query: { "filtreDocument.dossierId": did, range } }
+      },
+      {
+        nom: "v1 POST + body {dossierId}",
+        method: "POST",
+        opts: { body: { dossierId: did }, query: { range } }
+      },
+      {
+        nom: "v1 POST + body {DossierId}",
+        method: "POST",
+        opts: { body: { DossierId: did }, query: { range } }
+      },
+      {
+        nom: "v1 GET + ?dossierId=N (sans préfixe)",
+        method: "GET",
+        opts: { query: { dossierId: did, range } }
+      },
+      {
+        nom: "v1 GET + ?filtreDocument.DossierId=N (PascalCase)",
+        method: "GET",
+        opts: { query: { "filtreDocument.DossierId": did, range } }
+      },
+      {
+        nom: "v1 GET + ?filtreDocument.dossierId=N (camelCase swagger)",
+        method: "GET",
+        opts: { query: { "filtreDocument.dossierId": did, range } }
       }
-    });
+    ];
+
+    let lastErr = null;
+    for (const t of tentatives) {
+      try {
+        const res = await apiCall(t.method, "/Document/GetListeDocument", t.opts);
+        console.log(`[SECIB Link] ✓ GetListeDocument OK via "${t.nom}"`);
+        return res;
+      } catch (err) {
+        console.warn(`[SECIB Link] ✗ "${t.nom}" → ${err.message}`);
+        lastErr = err;
+      }
+    }
+    throw lastErr || new Error("Aucune variante de GetListeDocument n'a fonctionné");
   }
 
   /**
