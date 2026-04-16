@@ -1,0 +1,68 @@
+name: Build XPI
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Lire la version depuis manifest.json
+        id: version
+        run: |
+          VERSION=$(jq -r .version manifest.json)
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Version manifest = $VERSION"
+
+      - name: Vérifier que le tag correspond à la version manifest
+        run: |
+          TAG_VERSION="${GITHUB_REF#refs/tags/v}"
+          MANIFEST_VERSION="${{ steps.version.outputs.version }}"
+          if [ "$TAG_VERSION" != "$MANIFEST_VERSION" ]; then
+            echo "::error::Le tag v$TAG_VERSION ne correspond pas à manifest.json ($MANIFEST_VERSION). Bumpe la version dans manifest.json avant de tagger."
+            exit 1
+          fi
+
+      - name: Vérifier la syntaxe JS
+        run: |
+          for f in background.js sidebar/*.js; do
+            node --check "$f" || exit 1
+            echo "OK $f"
+          done
+
+      - name: Build .xpi
+        run: |
+          XPI="secib-link-${{ steps.version.outputs.version }}.xpi"
+          zip -r "$XPI" . \
+            -x "*.DS_Store" \
+            -x "*/.git/*" -x ".git/*" \
+            -x "*/.github/*" -x ".github/*" \
+            -x "*.xpi" \
+            -x "README.md" -x ".gitignore"
+          echo "Built $XPI"
+          unzip -l "$XPI" | head -20
+
+      - name: Créer la Release (draft) avec le .xpi non signé
+        uses: softprops/action-gh-release@v2
+        with:
+          files: secib-link-*.xpi
+          generate_release_notes: true
+          draft: true
+          name: ${{ github.ref_name }} (à signer via ATN)
+          body: |
+            ## Build automatique du .xpi
+
+            Ce .xpi est **non signé**. Pour le distribuer aux postes Thunderbird stables :
+
+            1. Télécharge `secib-link-${{ steps.version.outputs.version }}.xpi` ci-dessous
+            2. Soumets-le sur https://addons.thunderbird.net/developers/addon/submit/distribution en mode "On your own"
+            3. Récupère la version signée (suffixe `-tb.xpi`)
+            4. Re-uploade la version signée ici en remplaçant le .xpi non signé
+            5. Publie la draft Release
