@@ -48,7 +48,7 @@ const TreeView = (() => {
       toggle.textContent = expandable ? (node.expanded ? "▼" : "▶") : " ";
       if (expandable) toggle.addEventListener("click", (ev) => {
         ev.stopPropagation();
-        // L'expansion sera branchée à la Task 10
+        toggleNode(node);
       });
       row.appendChild(toggle);
 
@@ -124,6 +124,62 @@ const TreeView = (() => {
     function setRootNodes(list) {
       nodes = list;
       render();
+    }
+
+    async function toggleNode(node) {
+      if (node.expanded) {
+        node.expanded = false;
+        render();
+        return;
+      }
+      if (node.children === null) {
+        node.loading = true;
+        render();
+        try {
+          if (node.type === "client") {
+            node.children = await loadClientChildren(node);
+          } else if (node.type === "dossier") {
+            node.children = await loadDossierChildren(node);
+          } else if (node.type === "repertoire") {
+            node.children = node._pendingDocs || [];
+          } else {
+            node.children = [];
+          }
+        } catch (err) {
+          node.children = [];
+          node._error = err.message;
+        } finally {
+          node.loading = false;
+        }
+      }
+      node.expanded = true;
+      render();
+    }
+
+    async function loadClientChildren(clientNode) {
+      const personneId = clientNode.data.PersonneId;
+      const dossiers = await SecibAPI.getDossiersPersonne(personneId);
+      if (!Array.isArray(dossiers) || dossiers.length === 0) {
+        return [{
+          id: `empty:${clientNode.id}`,
+          type: "empty",
+          label: "Aucun dossier pour ce client",
+          children: [],
+          loading: false,
+          expanded: false,
+          data: {}
+        }];
+      }
+      return dossiers.map((d) => ({
+        id: `dossier:${d.DossierId}`,
+        type: "dossier",
+        label: d.Code || "—",
+        sublabel: d.Nom || "",
+        children: null,
+        loading: false,
+        expanded: false,
+        data: d
+      }));
     }
 
     function escapeHtml(s) {
