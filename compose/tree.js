@@ -56,7 +56,29 @@ const TreeView = (() => {
       label.className = "tree-label";
       label.innerHTML = `<span class="tn-label">${escapeHtml(node.label)}</span>` +
         (node.sublabel ? `<span class="tn-sub">${escapeHtml(node.sublabel)}</span>` : "");
+      if (node.type === "dossier" && callbacks && callbacks.onDossierSelect) {
+        label.classList.add("selectable");
+        label.addEventListener("click", (ev) => {
+          ev.stopPropagation();
+          callbacks.onDossierSelect(node.data);
+        });
+      }
       row.appendChild(label);
+
+      if (node.type === "repertoire" && callbacks && callbacks.onRepertoireOverride) {
+        const radio = document.createElement("input");
+        radio.type = "radio";
+        radio.name = "rep-archive-target";
+        radio.className = "tree-radio-archive";
+        radio.title = "Archiver le mail ici";
+        const rid = node.data ? (node.data.RepertoireId || null) : null;
+        radio.dataset.repertoireId = rid === null ? "" : String(rid);
+        radio.addEventListener("change", (ev) => {
+          if (radio.checked) callbacks.onRepertoireOverride(rid, node.data);
+          ev.stopPropagation();
+        });
+        row.appendChild(radio);
+      }
 
       el.appendChild(row);
 
@@ -282,7 +304,15 @@ const TreeView = (() => {
       return d.innerHTML;
     }
 
-    return { setRootNodes, render, search };
+    function setRepertoireRadio(repertoireId) {
+      const radios = root.querySelectorAll(".tree-radio-archive");
+      const target = repertoireId === null ? "" : String(repertoireId);
+      radios.forEach((r) => {
+        r.checked = r.dataset.repertoireId === target;
+      });
+    }
+
+    return { setRootNodes, render, search, setRepertoireRadio };
   }
 
   return { create };
