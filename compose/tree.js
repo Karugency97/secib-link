@@ -182,6 +182,99 @@ const TreeView = (() => {
       }));
     }
 
+    async function loadDossierChildren(dossierNode) {
+      const dossierId = dossierNode.data.DossierId;
+      const [parties, repertoires, documents] = await Promise.all([
+        SecibAPI.getPartiesDossier(dossierId).catch(() => []),
+        SecibAPI.getRepertoiresDossier(dossierId).catch(() => []),
+        SecibAPI.getDocumentsDossier(dossierId, 50).catch(() => [])
+      ]);
+
+      // Groupe "parties"
+      const partiesGroup = {
+        id: `parties:${dossierId}`,
+        type: "parties-group",
+        label: `Parties (${(parties || []).length})`,
+        children: (parties || []).map((p, i) => ({
+          id: `partie:${dossierId}:${i}`,
+          type: "partie",
+          label: ((p.Personne || {}).Nom) || ((p.Personne || {}).NomComplet) || "—",
+          sublabel: ((p.Personne || {}).Email) || "Pas d'email",
+          children: [],
+          loading: false,
+          expanded: false,
+          data: p
+        })),
+        loading: false,
+        expanded: false,
+        data: { dossierId }
+      };
+
+      // Répertoires (avec docs pré-chargés en _pendingDocs)
+      const docsByRep = new Map();
+      for (const doc of (documents || [])) {
+        const rid = doc.RepertoireId ? String(doc.RepertoireId) : "__root";
+        if (!docsByRep.has(rid)) docsByRep.set(rid, []);
+        docsByRep.get(rid).push(doc);
+      }
+
+      const repNodes = (repertoires || []).map((r) => {
+        const rid = String(r.RepertoireId);
+        const docs = (docsByRep.get(rid) || []).map((doc) => ({
+          id: `document:${doc.DocumentId}`,
+          type: "document",
+          label: doc.FileName || doc.Libelle || "(sans nom)",
+          sublabel: formatDateShort(doc.Date || doc.DateCreation),
+          children: [],
+          loading: false,
+          expanded: false,
+          data: doc
+        }));
+        return {
+          id: `repertoire:${rid}`,
+          type: "repertoire",
+          label: r.Libelle || `Répertoire #${rid}`,
+          sublabel: `${docs.length} document(s)`,
+          _pendingDocs: docs,
+          children: null,
+          loading: false,
+          expanded: false,
+          data: r
+        };
+      });
+
+      // Documents hors répertoire → pseudo-répertoire "Racine"
+      const rootDocs = docsByRep.get("__root") || [];
+      if (rootDocs.length > 0) {
+        repNodes.unshift({
+          id: `repertoire-root:${dossierId}`,
+          type: "repertoire",
+          label: "(Racine du dossier)",
+          sublabel: `${rootDocs.length} document(s)`,
+          _pendingDocs: rootDocs.map((doc) => ({
+            id: `document:${doc.DocumentId}`,
+            type: "document",
+            label: doc.FileName || doc.Libelle || "(sans nom)",
+            sublabel: formatDateShort(doc.Date),
+            children: [], loading: false, expanded: false, data: doc
+          })),
+          children: null,
+          loading: false,
+          expanded: false,
+          data: { RepertoireId: null, Libelle: "(Racine)" }
+        });
+      }
+
+      return [partiesGroup, ...repNodes];
+    }
+
+    function formatDateShort(s) {
+      if (!s) return "";
+      const d = new Date(s);
+      if (Number.isNaN(d.getTime())) return "";
+      return d.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit", year: "2-digit" });
+    }
+
     function escapeHtml(s) {
       if (s === null || s === undefined) return "";
       const d = document.createElement("div");
