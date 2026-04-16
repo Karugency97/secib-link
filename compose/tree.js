@@ -72,6 +72,55 @@ const TreeView = (() => {
       return el;
     }
 
+    async function search(q) {
+      const term = (q || "").trim();
+      if (term.length < 2) {
+        setRootNodes([]);
+        return;
+      }
+      root.innerHTML = `<div class="tree-loading">Recherche…</div>`;
+
+      let dossiers = [], personnes = [];
+      try {
+        [dossiers, personnes] = await Promise.all([
+          SecibAPI.rechercherDossiers(term, 15).catch(() => []),
+          SecibAPI.rechercherPersonne({ denomination: term }, 10).catch(() => [])
+        ]);
+      } catch (err) {
+        root.innerHTML = `<div class="tree-error">Erreur : ${escapeHtml(err.message)}</div>`;
+        return;
+      }
+
+      const list = [];
+      // Clients en premier (niveau 1, children: null → lazy)
+      for (const p of (personnes || [])) {
+        list.push({
+          id: `client:${p.PersonneId}`,
+          type: "client",
+          label: p.NomComplet || p.Denomination || p.Nom || "—",
+          sublabel: p.Email || p.Telephone || "",
+          children: null,
+          loading: false,
+          expanded: false,
+          data: p
+        });
+      }
+      // Dossiers ensuite (niveau 1 aussi, children: null → lazy)
+      for (const d of (dossiers || [])) {
+        list.push({
+          id: `dossier:${d.DossierId}`,
+          type: "dossier",
+          label: d.Code || "—",
+          sublabel: d.Nom || "",
+          children: null,
+          loading: false,
+          expanded: false,
+          data: d
+        });
+      }
+      setRootNodes(list);
+    }
+
     function setRootNodes(list) {
       nodes = list;
       render();
@@ -84,7 +133,7 @@ const TreeView = (() => {
       return d.innerHTML;
     }
 
-    return { setRootNodes, render };
+    return { setRootNodes, render, search };
   }
 
   return { create };
