@@ -6,7 +6,7 @@ const TreeView = (() => {
   /**
    * @typedef {Object} TreeNode
    * @property {string} id          // ex. "dossier:456"
-   * @property {string} type        // client | dossier | repertoire | document | parties-group | partie
+   * @property {string} type        // client | dossier | repertoire | document
    * @property {string} label
    * @property {string} [sublabel]
    * @property {?TreeNode[]} children  // null = pas chargé (lazy)
@@ -64,61 +64,6 @@ const TreeView = (() => {
         });
       }
       row.appendChild(label);
-
-      if (node.type === "repertoire" && callbacks && callbacks.onRepertoireOverride) {
-        const radio = document.createElement("input");
-        radio.type = "radio";
-        radio.name = "rep-archive-target";
-        radio.className = "tree-radio-archive";
-        radio.title = "Archiver le mail ici";
-        const rid = node.data ? (node.data.RepertoireId || null) : null;
-        radio.dataset.repertoireId = rid === null ? "" : String(rid);
-        radio.addEventListener("change", (ev) => {
-          if (radio.checked) callbacks.onRepertoireOverride(rid, node.data);
-          ev.stopPropagation();
-        });
-        row.appendChild(radio);
-      }
-
-      if (node.type === "partie" && callbacks && callbacks.onPartyToggle) {
-        const email = ((node.data.Personne || {}).Email || "").trim();
-        const cb = document.createElement("input");
-        cb.type = "checkbox";
-        cb.className = "tree-party-check";
-        cb.disabled = !email;
-        cb.checked = !!node._selected;
-        cb.addEventListener("change", (ev) => {
-          ev.stopPropagation();
-          node._selected = cb.checked;
-          callbacks.onPartyToggle(node.data, cb.checked, node._recipient || "to");
-        });
-        row.insertBefore(cb, row.firstChild);
-
-        const radios = document.createElement("span");
-        radios.className = "tree-party-radios";
-        for (const [val, lbl] of [["to", "À"], ["cc", "Cc"], ["bcc", "Cci"]]) {
-          const w = document.createElement("label");
-          const r = document.createElement("input");
-          r.type = "radio";
-          r.name = `party-${node.id}`;
-          r.value = val;
-          r.disabled = !email;
-          r.checked = (node._recipient || "to") === val;
-          r.addEventListener("change", (ev) => {
-            ev.stopPropagation();
-            if (r.checked) {
-              node._recipient = val;
-              if (node._selected && callbacks.onPartyToggle) {
-                callbacks.onPartyToggle(node.data, true, val);
-              }
-            }
-          });
-          w.appendChild(r);
-          w.appendChild(document.createTextNode(lbl));
-          radios.appendChild(w);
-        }
-        row.appendChild(radios);
-      }
 
       if (node.type === "document" && callbacks && callbacks.onDocumentToggle) {
         const cb = document.createElement("input");
@@ -262,33 +207,11 @@ const TreeView = (() => {
 
     async function loadDossierChildren(dossierNode) {
       const dossierId = dossierNode.data.DossierId;
-      const [parties, repertoires, documents] = await Promise.all([
-        SecibAPI.getPartiesDossier(dossierId).catch(() => []),
+      const [repertoires, documents] = await Promise.all([
         SecibAPI.getRepertoiresDossier(dossierId).catch(() => []),
-        SecibAPI.getDocumentsDossier(dossierId, 50).catch(() => [])
+        SecibAPI.getDocumentsDossier(dossierId).catch(() => [])
       ]);
 
-      // Groupe "parties"
-      const partiesGroup = {
-        id: `parties:${dossierId}`,
-        type: "parties-group",
-        label: `Parties (${(parties || []).length})`,
-        children: (parties || []).map((p, i) => ({
-          id: `partie:${dossierId}:${i}`,
-          type: "partie",
-          label: ((p.Personne || {}).Nom) || ((p.Personne || {}).NomComplet) || "—",
-          sublabel: ((p.Personne || {}).Email) || "Pas d'email",
-          children: [],
-          loading: false,
-          expanded: false,
-          data: p
-        })),
-        loading: false,
-        expanded: false,
-        data: { dossierId }
-      };
-
-      // Répertoires (avec docs pré-chargés en _pendingDocs)
       const docsByRep = new Map();
       for (const doc of (documents || [])) {
         const rid = doc.RepertoireId ? String(doc.RepertoireId) : "__root";
@@ -303,10 +226,7 @@ const TreeView = (() => {
           type: "document",
           label: doc.FileName || doc.Libelle || "(sans nom)",
           sublabel: formatDateShort(doc.Date || doc.DateCreation),
-          children: [],
-          loading: false,
-          expanded: false,
-          data: doc
+          children: [], loading: false, expanded: false, data: doc
         }));
         return {
           id: `repertoire:${rid}`,
@@ -321,7 +241,6 @@ const TreeView = (() => {
         };
       });
 
-      // Documents hors répertoire → pseudo-répertoire "Racine"
       const rootDocs = docsByRep.get("__root") || [];
       if (rootDocs.length > 0) {
         repNodes.unshift({
@@ -343,7 +262,7 @@ const TreeView = (() => {
         });
       }
 
-      return [partiesGroup, ...repNodes];
+      return repNodes;
     }
 
     function formatDateShort(s) {
@@ -360,15 +279,7 @@ const TreeView = (() => {
       return d.innerHTML;
     }
 
-    function setRepertoireRadio(repertoireId) {
-      const radios = root.querySelectorAll(".tree-radio-archive");
-      const target = repertoireId === null ? "" : String(repertoireId);
-      radios.forEach((r) => {
-        r.checked = r.dataset.repertoireId === target;
-      });
-    }
-
-    return { setRootNodes, render, search, setRepertoireRadio };
+    return { setRootNodes, render, search };
   }
 
   return { create };
