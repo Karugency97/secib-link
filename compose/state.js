@@ -1,7 +1,16 @@
 // SECIB Link — Helper de persistance pour l'état compose ↔ background.
 // Utilise browser.storage.session si dispo (volatile, scopé à la session
-// Thunderbird), sinon fallback browser.storage.local avec clé préfixée
-// et nettoyage explicite.
+// Thunderbird), sinon fallback browser.storage.local avec clé préfixée.
+//
+// Shape par onglet compose (clé "compose:<tabId>") :
+//   {
+//     dossierId: number,
+//     dossierCode: string,
+//     dossierNom: string,
+//     archiveRepertoireId: number | null,
+//     archiveEnabled: boolean,
+//     createdAutoEmail: boolean
+//   }
 
 const ComposeState = (() => {
   const PREFIX = "compose:";
