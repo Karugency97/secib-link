@@ -230,40 +230,11 @@ const SecibAPI = (() => {
   }
 
   /**
-   * Liste les répertoires d'un dossier.
-   * ⚠️ Signature API variable selon la version SECIB : on tente plusieurs
-   * variantes, la première qui marche gagne. La variante v1 GET ?dossierId=N
-   * est placée en tête (correspond à celle utilisée par le MCP node côté 8.1.4).
+   * Liste les répertoires d'un dossier via la gateway NPL-SECIB.
+   * Contourne le body-on-GET de SECIB (/Document/GetListRepertoireDossier).
    */
   async function getRepertoiresDossier(dossierId) {
-    const did = Number(dossierId);
-    const tentatives = [
-      { nom: "v1 GET ?dossierId=N",
-        method: "GET", opts: { query: { dossierId: did } } },
-      { nom: "v1 POST body {DossierId}",
-        method: "POST", opts: { body: { DossierId: did } } },
-      { nom: "v1 POST body {dossierId}",
-        method: "POST", opts: { body: { dossierId: did } } },
-      { nom: "v2 POST body {DossierId}",
-        method: "POST", opts: { version: "v2", body: { DossierId: did } } },
-      { nom: "v2 POST body {dossierId}",
-        method: "POST", opts: { version: "v2", body: { dossierId: did } } },
-      { nom: "v1 GET ?filtreRepertoire.dossierId=N",
-        method: "GET", opts: { query: { "filtreRepertoire.dossierId": did } } }
-    ];
-
-    let lastErr = null;
-    for (const t of tentatives) {
-      try {
-        const res = await apiCall(t.method, "/Document/GetListRepertoireDossier", t.opts);
-        console.log(`[SECIB Link] ✓ GetListRepertoireDossier OK via "${t.nom}"`);
-        return res;
-      } catch (err) {
-        console.warn(`[SECIB Link] ✗ "${t.nom}" → ${err.message}`);
-        lastErr = err;
-      }
-    }
-    throw lastErr || new Error("Aucune variante de GetListRepertoireDossier n'a fonctionné");
+    return gatewayCall("/repertoires", { dossierId: Number(dossierId) });
   }
 
   /**
@@ -278,11 +249,11 @@ const SecibAPI = (() => {
   }
 
   /**
-   * Liste les parties d'un dossier (Client / Adversaire / Juridiction / Correspondant).
-   * Chaque PartieApiDto embarque la Personne avec ses coordonnées (Email, Téléphone, ...).
+   * Liste les parties d'un dossier via la gateway NPL-SECIB.
+   * Contourne le body-on-GET de SECIB (/Partie/Get).
    */
   async function getPartiesDossier(dossierId) {
-    return apiCall("GET", "/Partie/Get", { query: { dossierId } });
+    return gatewayCall("/parties", { dossierId: Number(dossierId) });
   }
 
   /**
