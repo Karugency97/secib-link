@@ -19,7 +19,8 @@
     "compose",
     "storage",
     "https://secibneo.secib.fr/*",
-    "https://api.secib.fr/*"
+    "https://api.secib.fr/*",
+    "https://apisecib.nplavocat.com/*"
   ],
   "background": {
     "scripts": ["background.js"]

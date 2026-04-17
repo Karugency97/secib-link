@@ -40,6 +40,18 @@
       <label for="input-client-secret">Client Secret</label>
       <input type="password" id="input-client-secret" placeholder="Votre Client Secret">
     </div>
+
+    <h3 class="settings-subheading">Gateway NPL-SECIB (optionnel)</h3>
+    <p class="settings-hint">Requise pour charger les documents d'un dossier dans le panneau Compose (contournement body-on-GET).</p>
+    <div class="form-group">
+      <label for="input-gateway-url">URL Gateway</label>
+      <input type="url" id="input-gateway-url" placeholder="https://apisecib.nplavocat.com">
+    </div>
+    <div class="form-group">
+      <label for="input-gateway-api-key">API Key</label>
+      <input type="password" id="input-gateway-api-key" placeholder="gw_sl_...">
+    </div>
+
     <div class="form-actions">
       <button type="button" id="btn-save-settings" class="btn btn-primary">Enregistrer</button>
       <button type="button" id="btn-cancel-settings" class="btn btn-secondary">Fermer</button>

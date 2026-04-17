@@ -16,6 +16,8 @@
   const inputCabinetId = document.getElementById("input-cabinet-id");
   const inputClientId = document.getElementById("input-client-id");
   const inputClientSecret = document.getElementById("input-client-secret");
+  const inputGatewayUrl = document.getElementById("input-gateway-url");
+  const inputGatewayApiKey = document.getElementById("input-gateway-api-key");
   const settingsFeedback = document.getElementById("settings-feedback");
 
   // Bandeau "déjà enregistré"
@@ -108,12 +110,15 @@
     settingsFeedback.classList.add("hidden");
     try {
       const stored = await browser.storage.local.get([
-        "secib_base_url", "secib_cabinet_id", "secib_client_id", "secib_client_secret"
+        "secib_base_url", "secib_cabinet_id", "secib_client_id", "secib_client_secret",
+        "gateway_url", "gateway_api_key"
       ]);
       inputBaseUrl.value = stored.secib_base_url || "https://secibneo.secib.fr/8.2.1";
       inputCabinetId.value = stored.secib_cabinet_id || "";
       inputClientId.value = stored.secib_client_id || "";
       inputClientSecret.value = stored.secib_client_secret || "";
+      inputGatewayUrl.value = stored.gateway_url || "https://apisecib.nplavocat.com";
+      inputGatewayApiKey.value = stored.gateway_api_key || "";
       console.log("[SECIB Link] Settings chargés :", {
         url: stored.secib_base_url,
         cabinetId: stored.secib_cabinet_id ? "(défini)" : "(vide)",
@@ -146,7 +151,7 @@
 
   // Auto-sauvegarde au changement de chaque champ (filet de sécurité
   // si le popup se ferme avant un clic sur Enregistrer)
-  for (const input of [inputBaseUrl, inputCabinetId, inputClientId, inputClientSecret]) {
+  for (const input of [inputBaseUrl, inputCabinetId, inputClientId, inputClientSecret, inputGatewayUrl, inputGatewayApiKey]) {
     input.addEventListener("change", () => saveSettings(false));
     input.addEventListener("blur", () => saveSettings(false));
   }
@@ -160,7 +165,9 @@
       secib_base_url: inputBaseUrl.value.trim(),
       secib_cabinet_id: inputCabinetId.value.trim(),
       secib_client_id: inputClientId.value.trim(),
-      secib_client_secret: inputClientSecret.value.trim()
+      secib_client_secret: inputClientSecret.value.trim(),
+      gateway_url: inputGatewayUrl.value.trim().replace(/\/+$/, ""),
+      gateway_api_key: inputGatewayApiKey.value.trim()
     };
 
     try {
