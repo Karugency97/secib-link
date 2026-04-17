@@ -582,3 +582,78 @@ body {
   border-color: #e0e4ec;
   color: #888;
 }
+
+/* ─── Section Contacts (§3) ─────────────────────────────── */
+
+.contacts-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 4px 0;
+}
+
+.contacts-empty {
+  padding: 8px 12px;
+  color: var(--muted, #6b7280);
+  font-style: italic;
+}
+
+.contact-row {
+  display: grid;
+  grid-template-columns: auto auto auto 1fr;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 4px;
+}
+
+.contact-row:hover { background: rgba(0, 0, 0, 0.03); }
+
+.contact-row.no-email {
+  opacity: 0.55;
+}
+
+.contact-row .contact-check {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  font-size: 11px;
+  color: var(--muted, #6b7280);
+  min-width: 32px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.contact-row .contact-check input {
+  margin: 0 0 2px 0;
+}
+
+.contact-row .contact-name {
+  font-weight: 500;
+}
+
+.contact-row .contact-email {
+  color: var(--muted, #6b7280);
+  font-size: 12px;
+  margin-left: 6px;
+}
+
+.contact-row .contact-noemail {
+  color: var(--muted, #6b7280);
+  font-style: italic;
+  font-size: 12px;
+}
+
+/* ─── Section Archivage (§5) ────────────────────────────── */
+
+.archive-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.archive-toggle input[disabled] + span {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
