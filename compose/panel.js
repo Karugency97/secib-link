@@ -387,7 +387,7 @@
     } else {
       showApplyFeedback("error", `${msg} — ${errors.join(" · ")}`);
     }
-    btnApply.disabled = false;
+    updateApplyButton();
   }
 
   // ---- Helpers ----
