@@ -129,6 +129,54 @@ const SecibAPI = (() => {
     }
   }
 
+  // ─── Gateway NPL-SECIB ──────────────────────────────────────────
+  // Contourne les endpoints SECIB qui exigent body-on-GET (impossibles en fetch).
+  // Config : browser.storage.local { gateway_url, gateway_api_key }
+
+  async function getGatewayConfig() {
+    const stored = await browser.storage.local.get(["gateway_url", "gateway_api_key"]);
+    if (!stored.gateway_url || !stored.gateway_api_key) {
+      throw new Error("GATEWAY_CONFIG_MISSING");
+    }
+    return {
+      baseUrl: stored.gateway_url.replace(/\/+$/, ""),
+      apiKey: stored.gateway_api_key.trim()
+    };
+  }
+
+  /**
+   * Appel générique vers la gateway NPL-SECIB (https://apisecib.nplavocat.com/api/v1).
+   * La gateway unwrap SECIB et renvoie { data: <payload> } — on extrait `.data`.
+   */
+  async function gatewayCall(path, queryParams) {
+    const config = await getGatewayConfig();
+    const url = new URL(`${config.baseUrl}/api/v1${path}`);
+    if (queryParams) {
+      for (const [k, v] of Object.entries(queryParams)) {
+        if (v !== undefined && v !== null && v !== "") {
+          url.searchParams.set(k, v);
+        }
+      }
+    }
+    console.log(`[SECIB Link] Gateway ${url.toString()}`);
+    const response = await fetch(url.toString(), {
+      method: "GET",
+      headers: {
+        "X-API-Key": config.apiKey,
+        "Accept": "application/json"
+      }
+    });
+    const text = await response.text();
+    let payload = null;
+    try { payload = JSON.parse(text); } catch {}
+    if (!response.ok) {
+      const code = payload && payload.error && payload.error.code ? payload.error.code : `HTTP_${response.status}`;
+      const msg = payload && payload.error && payload.error.message ? payload.error.message : text.slice(0, 200);
+      throw new Error(`GATEWAY ${code}: ${msg}`);
+    }
+    return payload && "data" in payload ? payload.data : payload;
+  }
+
   // ─── Méthodes publiques ──────────────────────────────────────────
 
   /**
@@ -238,76 +286,15 @@ const SecibAPI = (() => {
   }
 
   /**
-   * Liste les documents d'un dossier (range max 50 par appel).
-   * Renvoie DocumentCompactApiDto[] : DocumentId, FileName, Extension, Date, RepertoireId, RepertoireLibelle, Type, IsAnnexe.
+   * Liste les documents d'un dossier via la gateway NPL-SECIB.
+   * Renvoie DocumentCompactApiDto[] : DocumentId, Libelle, Extension, Date, RepertoireId, RepertoireLibelle, Type, DossierId, DossierCode, DossierNom.
    *
-   * ⚠️ L'API SECIB attend le filtre dans le BODY (même sur GET côté MCP Node), ce
-   * qui est interdit côté browser. On tente plusieurs variantes en cascade et on
-   * loggue chaque échec pour diagnostic.
+   * L'endpoint SECIB /Document/GetListeDocument attend ses filtres dans le body JSON
+   * d'une requête GET, ce que le navigateur refuse. La gateway (Node.js) fait le
+   * passe-plat via node:https et expose une API REST classique.
    */
-  async function getDocumentsDossier(dossierId, limit = 50, offset = 0) {
-    const range = `${offset}-${offset + limit - 1}`;
-    const did = Number(dossierId);
-    const tentatives = [
-      {
-        nom: "v2 POST + body {DossierId}",
-        method: "POST",
-        opts: { version: "v2", body: { DossierId: did }, query: { range } }
-      },
-      {
-        nom: "v2 POST + body {dossierId}",
-        method: "POST",
-        opts: { version: "v2", body: { dossierId: did }, query: { range } }
-      },
-      {
-        nom: "v2 POST + body {filtreDocument:{dossierId}}",
-        method: "POST",
-        opts: { version: "v2", body: { filtreDocument: { dossierId: did } }, query: { range } }
-      },
-      {
-        nom: "v2 GET + ?filtreDocument.dossierId=N",
-        method: "GET",
-        opts: { version: "v2", query: { "filtreDocument.dossierId": did, range } }
-      },
-      {
-        nom: "v1 POST + body {dossierId}",
-        method: "POST",
-        opts: { body: { dossierId: did }, query: { range } }
-      },
-      {
-        nom: "v1 POST + body {DossierId}",
-        method: "POST",
-        opts: { body: { DossierId: did }, query: { range } }
-      },
-      {
-        nom: "v1 GET + ?dossierId=N (sans préfixe)",
-        method: "GET",
-        opts: { query: { dossierId: did, range } }
-      },
-      {
-        nom: "v1 GET + ?filtreDocument.DossierId=N (PascalCase)",
-        method: "GET",
-        opts: { query: { "filtreDocument.DossierId": did, range } }
-      },
-      {
-        nom: "v1 GET + ?filtreDocument.dossierId=N (camelCase swagger)",
-        method: "GET",
-        opts: { query: { "filtreDocument.dossierId": did, range } }
-      }
-    ];
-
-    let lastErr = null;
-    for (const t of tentatives) {
-      try {
-        const res = await apiCall(t.method, "/Document/GetListeDocument", t.opts);
-        console.log(`[SECIB Link] ✓ GetListeDocument OK via "${t.nom}"`);
-        return res;
-      } catch (err) {
-        console.warn(`[SECIB Link] ✗ "${t.nom}" → ${err.message}`);
-        lastErr = err;
-      }
-    }
-    throw lastErr || new Error("Aucune variante de GetListeDocument n'a fonctionné");
+  async function getDocumentsDossier(dossierId) {
+    return gatewayCall("/documents", { dossierId: Number(dossierId) });
   }
 
   /**
