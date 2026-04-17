@@ -245,16 +245,19 @@ const TreeView = (() => {
           data: {}
         }];
       }
-      return dossiers.map((d) => ({
-        id: `dossier:${d.DossierId}`,
-        type: "dossier",
-        label: d.Code || "—",
-        sublabel: d.Nom || "",
-        children: null,
-        loading: false,
-        expanded: false,
-        data: d
-      }));
+      return dossiers
+        .map((p) => p && p.Dossier)
+        .filter((d) => d && Number.isFinite(Number(d.DossierId)))
+        .map((d) => ({
+          id: `dossier:${d.DossierId}`,
+          type: "dossier",
+          label: d.Code || "—",
+          sublabel: d.Nom || "",
+          children: null,
+          loading: false,
+          expanded: false,
+          data: d
+        }));
     }
 
     async function loadDossierChildren(dossierNode) {
