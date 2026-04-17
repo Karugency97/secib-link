@@ -132,3 +132,65 @@ browser.windows.onRemoved.addListener((windowId) => {
     composePanelTabId = null;
   }
 });
+
+// ─── Archivage post-envoi ───────────────────────────────────────────
+
+browser.compose.onAfterSend.addListener(async (tab, sendInfo) => {
+  try {
+    if (!sendInfo || sendInfo.mode !== "sendNow") return;
+    const st = await ComposeState.get(tab.id);
+    if (!st || !st.archiveEnabled || !st.archiveRepertoireId || !st.dossierId) {
+      await ComposeState.remove(tab.id);
+      return;
+    }
+
+    const messageIds = (sendInfo.messages || []).map((m) => m.id).filter(Boolean);
+    if (messageIds.length === 0) {
+      console.warn("[SECIB Link] onAfterSend : aucun message à archiver");
+      await ComposeState.remove(tab.id);
+      return;
+    }
+
+    for (const mid of messageIds) {
+      try {
+        const raw = await browser.messages.getRaw(mid, { data_format: "BinaryString" });
+        const emlBase64 = btoa(raw);
+        const msg = await browser.messages.get(mid);
+        const subject = (msg && msg.subject) || "mail";
+        const fileName = `${sanitizeFileName(subject)}.eml`;
+
+        await SecibAPI.saveEmailMessage({
+          dossierId: Number(st.dossierId),
+          repertoireId: Number(st.archiveRepertoireId),
+          emlBase64,
+          fileName
+        });
+
+        notify("SECIB Link", `Mail archivé dans ${st.dossierCode || "dossier SECIB"}`);
+      } catch (err) {
+        console.error("[SECIB Link] Archivage échoué :", err);
+        notify("SECIB Link — archivage échoué", err.message || String(err));
+      }
+    }
+  } finally {
+    await ComposeState.remove(tab.id).catch(() => {});
+  }
+});
+
+function sanitizeFileName(s) {
+  return String(s || "mail")
+    .replace(/[\\/:*?"<>|\r\n\t]+/g, "_")
+    .slice(0, 120)
+    .trim() || "mail";
+}
+
+function notify(title, message) {
+  try {
+    browser.notifications.create({
+      type: "basic",
+      title,
+      message,
+      iconUrl: browser.runtime.getURL("icons/icon-48.png")
+    });
+  } catch {}
+}
