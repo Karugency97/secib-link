@@ -17,32 +17,44 @@
 
   <div id="error-zone" class="error-zone hidden"></div>
 
-  <!-- Bloc 1 : recherche arbre (client ou dossier) -->
+  <!-- §1 Recherche (arbre clients + dossiers) -->
   <section class="section">
     <h2>Rechercher un client ou un dossier SECIB</h2>
     <div class="search-bar">
       <input type="search" id="tree-search" placeholder="Nom de client, code ou nom de dossier…" autocomplete="off">
     </div>
-    <div id="dossier-card" class="dossier-card hidden">
+    <div id="search-results" class="tree-container"></div>
+  </section>
+
+  <!-- §2 Dossier sélectionné -->
+  <section id="dossier-section" class="section hidden">
+    <div class="dossier-card">
       <div class="dossier-top">
         <span id="dc-code" class="dossier-ref"></span>
         <button type="button" id="dc-clear" class="btn-link">Changer</button>
       </div>
       <div id="dc-nom" class="dossier-title"></div>
-      <div id="dc-meta" class="dossier-meta"></div>
     </div>
   </section>
 
-  <!-- Bloc 2 : arbre unifié Client → Dossier → Répertoires -->
-  <section id="tree-section" class="section hidden">
-    <h2>Dossier, parties et documents</h2>
-    <div id="tree-container" class="tree-container"></div>
+  <!-- §3 Contacts -->
+  <section id="contacts-section" class="section hidden">
+    <h2>Contacts</h2>
+    <div id="contacts-list" class="contacts-list"></div>
   </section>
 
-  <!-- Bloc 3 : destination archivage mail -->
-  <section id="archive-section" class="section archive-destination disabled">
-    <div class="ad-title">Archivage du mail envoyé</div>
-    <div id="archive-target" class="ad-target">Sélectionnez un dossier ci-dessus</div>
+  <!-- §4 Pièces jointes -->
+  <section id="attachments-section" class="section hidden">
+    <h2>Pièces jointes</h2>
+    <div id="attachments-tree" class="tree-container"></div>
+  </section>
+
+  <!-- §5 Archivage -->
+  <section id="archive-section" class="section hidden">
+    <label class="archive-toggle">
+      <input type="checkbox" id="archive-enabled" checked>
+      <span id="archive-label">Archiver le mail dans « Email »</span>
+    </label>
     <div id="archive-hint" class="ad-hint"></div>
   </section>
 
@@ -61,6 +73,7 @@
   <script src="../sidebar/secib-api.js"></script>
   <script src="state.js"></script>
   <script src="tree.js"></script>
+  <script src="contacts.js"></script>
   <script src="panel.js"></script>
 </body>
 </html>
