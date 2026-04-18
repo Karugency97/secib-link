@@ -1,55 +1,13 @@
 # Gateway NPL-SECIB — endpoint contenu binaire d'un document
 
-**Statut :** À implémenter côté gateway.
-**Destinataire :** mainteneur de la gateway NPL-SECIB.
+**Statut :** ✅ Livré 2026-04-17 (Plan 6 gateway, branche `feature/plan6-document-content-binaire` — à redéployer côté Coolify).
 **Demandeur :** SECIB-Link (extension Thunderbird).
 
-## Contexte
+## Résolution
 
-SECIB-Link laisse l'utilisateur cocher des documents d'un dossier pour les joindre au mail en cours de composition. Le client télécharge actuellement le contenu via l'endpoint SECIB `GET /Document/GetContentDocumentBase64?documentId=UUID` (appelé directement depuis le navigateur, pas via la gateway).
+Nouvel endpoint gateway : `GET /api/v1/documents/:id/content`.
 
-**Problème :** cet endpoint convertit systématiquement le document en PDF côté serveur et renvoie le PDF en base64. Pour certains formats, la conversion échoue :
-
-```
-400 "La conversion PDF coté serveur pour les fichiers '.eml' n'est pas prise en charge"
-400 "La conversion PDF coté serveur pour les fichiers '.htm' n'est pas prise en charge"
-400 "La conversion PDF coté serveur pour les fichiers '.jpeg' n'est pas prise en charge"
-400 "La conversion PDF coté serveur pour les fichiers '.msg' n'est pas prise en charge"
-```
-
-Formats observés en erreur : `.eml`, `.htm`, `.jpeg`, `.msg`. Probablement d'autres (tous les binaires non convertibles en PDF : images diverses, archives, vidéos, etc.).
-
-**Besoin :** pouvoir récupérer le **contenu binaire brut** d'un document, sans conversion serveur, pour l'attacher tel quel au mail Thunderbird.
-
-## Piste côté SECIB
-
-L'API SECIB expose probablement un (ou plusieurs) endpoint qui renvoie le binaire sans conversion. Pistes à investiguer par le mainteneur gateway :
-
-- Un paramètre sur `GetContentDocumentBase64` (ex. `convertToPdf=false`) qui désactive la conversion.
-- Un endpoint distinct type `GetDocumentContent`, `GetRawContent`, `GetOriginalContent`, etc.
-- Consulter le MCP SECIB local (`mcp-secib/src/tools/document.ts`) qui gère déjà ce cas en production pour les agents MCP.
-
-Le pattern de nommage `GetContentDocumentBase64` suggère qu'un flag ou un endpoint jumeau existe ; la conversion PDF semble être une feature « bonus » appliquée par défaut.
-
-## Endpoint gateway proposé
-
-`GET /api/v1/documents/{documentId}/content`
-
-### Path params
-
-- `documentId` (UUID SECIB, obligatoire)
-
-### Headers
-
-- `X-API-Key: <key>` — même authentification que le reste de la gateway.
-
-### Traitement
-
-1. Authentifier contre SECIB (OAuth2 client_credentials, pool de tokens existant).
-2. Appeler l'endpoint SECIB qui renvoie le binaire brut (à déterminer — voir piste ci-dessus).
-3. Repacker la réponse SECIB pour la gateway.
-
-### Réponse — `200 OK`
+**Shape** (comme proposé dans la spec initiale) :
 
 ```json
 {
@@ -62,56 +20,25 @@ Le pattern de nommage `GetContentDocumentBase64` suggère qu'un flag ou un endpo
 }
 ```
 
-- `fileName` : nom exact du fichier tel que stocké dans SECIB (avec son extension originale).
-- `mimeType` : si SECIB le fournit, le relayer tel quel ; sinon déduire depuis l'extension ou laisser `"application/octet-stream"`.
-- `contentBase64` : contenu binaire original, encodé base64 côté gateway (pas de conversion PDF).
+**Caractéristiques clés** :
+- Aucune conversion PDF côté SECIB — le binaire original est restitué bit-exact (validé en test avec magic bytes JPEG `FF D8 FF E0`).
+- `fileName` composé depuis SECIB `Libelle` + `Extension` (sans double-suffixer si `Libelle` porte déjà l'extension).
+- `mimeType` : priorité à `Content-Type` upstream SECIB s'il est spécifique, sinon dérivé de `Extension` (30 formats mappés incluant `.eml` `.msg` `.htm` `.jpeg` `.docx` etc.), fallback `application/octet-stream`.
+- Authentification `X-API-Key` standard, même que les autres endpoints.
 
-### Erreurs
+**Codes d'erreur** :
+- `400 invalid_id` — `:id` pas au format UUID SECIB.
+- `404 secib_client_error` — document inexistant ou inaccessible au cabinet authentifié.
+- `502 secib_upstream` — SECIB 5xx ou réseau.
+- `503 circuit_open` — circuit breaker ouvert.
 
-- `400` si `documentId` absent ou non-UUID.
-- `404` si le document n'existe pas / n'est pas accessible au cabinet authentifié.
-- `500 { "error": { "code": "UPSTREAM_ERROR", "message": "..." } }` si erreur SECIB non prévue. Propager le message original SECIB dans `message` pour faciliter le debug.
+## Pourquoi la piste SECIB était bonne
 
-## Alternative : réponse binaire directe
+Le vrai endpoint SECIB à utiliser est `GET /Document/GetContentDocument?documentId=UUID` (sans suffixe `Base64`) — confirmé par le MCP local (`mcp-secib/src/tools/document.ts:75`), en prod. L'endpoint `GetContentDocumentBase64` que SECIB-Link appelait directement ajoute la conversion PDF côté serveur, qui échoue pour les formats non-convertibles (cause-racine des 400 observés).
 
-Si tu préfères éviter l'overhead base64 (~33% de taille), tu peux aussi renvoyer directement :
+Un fix annexe a été nécessaire côté gateway (`SecibClient.requestBinary`) pour préserver les octets non-UTF8 — l'ancienne route `/documents/:id/contenu` faisait `toString('utf8')` sur toute réponse non-JSON, corrompant silencieusement les binaires. Seuls les tests mockés (renvoyant du JSON `{ Base64: "..." }`) masquaient le bug. Les nouveaux tests round-trip byte-exact sur des magic bytes JPEG pour l'exclure définitivement.
 
-```
-Content-Type: <mimeType>
-Content-Disposition: attachment; filename="<fileName>"
-Body: <bytes bruts>
-```
-
-Côté client, on ferait `response.arrayBuffer()` au lieu de `response.json()`. Deux cas réels :
-- PJ typiques 100 Ko – 2 Mo → gain négligeable.
-- PJ lourdes 5-10 Mo → gain notable sur la bande passante.
-
-**Recommandation :** partir sur la version JSON+base64 (cohérent avec `/dossiers/{id}/parties`, `/repertoires`, `/documents`). Si la taille pose problème plus tard, bascule sur le binaire direct — changement de signature tolérable à ce moment-là.
-
-## Tests côté gateway
-
-```bash
-# Document PDF natif (doit fonctionner) — déjà OK via GetContentDocumentBase64
-curl -H "X-API-Key: $KEY" \
-  "https://apisecib.nplavocat.com/api/v1/documents/<UUID>/content" | jq '.data.fileName, .data.mimeType'
-
-# Document .eml (actuellement en échec 400)
-curl -H "X-API-Key: $KEY" \
-  "https://apisecib.nplavocat.com/api/v1/documents/4d9aaa81-d337-4924-89e3-b42e00ed6e93/content" | jq '.data.fileName'
-# → "lettre.eml" attendu, contentBase64 rempli
-
-# Document .jpeg (actuellement en échec 400)
-curl -H "X-API-Key: $KEY" \
-  "https://apisecib.nplavocat.com/api/v1/documents/471ba829-e56f-48b1-af8b-b42d0185fb3b/content" | jq '.data.fileName'
-# → "photo.jpeg" attendu
-
-# Document inexistant
-curl -H "X-API-Key: $KEY" \
-  "https://apisecib.nplavocat.com/api/v1/documents/00000000-0000-0000-0000-000000000000/content"
-# → 404
-```
-
-## Répercussion côté SECIB-Link
+## À faire côté SECIB-Link
 
 Dans `sidebar/secib-api.js`, remplacer :
 
@@ -125,35 +52,50 @@ par :
 
 ```js
 async function getDocumentContent(documentId) {
-  return gatewayCall(`/documents/${encodeURIComponent(documentId)}/content`);
+  const res = await fetch(
+    `${GATEWAY}/api/v1/documents/${encodeURIComponent(documentId)}/content`,
+    { headers: { "X-API-Key": GATEWAY_KEY } },
+  );
+  if (!res.ok) throw new Error(`Gateway ${res.status}`);
+  const { data } = await res.json();
+  return data; // { documentId, fileName, mimeType, contentBase64 }
 }
 ```
 
-Dans `compose/panel.js#performApply`, le consommateur actuel lit déjà `content.Content` et `content.FileName` :
+Dans `compose/panel.js#performApply`, adapter le consommateur :
 
 ```js
 const content = await SecibAPI.getDocumentContent(d.DocumentId);
-const base64 = content && content.Content ? content.Content : "";
-const file = base64ToFile(base64, content.FileName || label, guessMime(label));
-```
-
-Pour coller au shape proposé (`contentBase64`, `fileName`, `mimeType`), adapter :
-
-```js
-const content = await SecibAPI.getDocumentContent(d.DocumentId);
-const base64 = content && content.contentBase64 ? content.contentBase64 : "";
+const base64 = content?.contentBase64 ?? "";
 const file = base64ToFile(base64, content.fileName || label, content.mimeType || guessMime(label));
 ```
 
-`guessMime` devient un fallback — la gateway pourra retourner le vrai mimeType.
+`guessMime` reste un fallback — la gateway renverra désormais le vrai MIME dans la plupart des cas (30 formats mappés).
 
-## Bénéfice attendu
+## Tests gateway à rejouer post-deploy
 
-Aujourd'hui, sur un dossier moyen (source : logs utilisateur 2026-04-17), environ **30-40 % des documents échouent** à être joints au mail dès qu'ils ne sont pas des PDF natifs ou des formats Office. Avec cet endpoint, on couvre 100 % des formats stockés dans SECIB.
+```bash
+# .eml — précédemment 400
+curl -H "X-API-Key: $KEY" \
+  "https://apisecib.nplavocat.com/api/v1/documents/<UUID-eml>/content" \
+  | jq '.data.fileName, .data.mimeType'
+# → "lettre.eml", "message/rfc822"
+
+# .jpeg — précédemment 400
+curl -H "X-API-Key: $KEY" \
+  "https://apisecib.nplavocat.com/api/v1/documents/<UUID-jpeg>/content" \
+  | jq '.data | {fileName, mimeType, size: (.contentBase64 | length * 3 / 4 | floor)}'
+
+# UUID invalide
+curl -H "X-API-Key: $KEY" \
+  "https://apisecib.nplavocat.com/api/v1/documents/not-a-uuid/content"
+# → 400 invalid_id
+```
 
 ## Références
 
-- Extrait de logs utilisateur 2026-04-17 (erreurs constatées) : voir conversation SECIB-Link.
-- Endpoint SECIB actuel (à remplacer) : `GET /Document/GetContentDocumentBase64?documentId=UUID`.
-- Pattern gateway existant à suivre : `npl-api-gateway/src/routes/dossiers.ts` (endpoint `/dossiers/{id}/parties` + `/repertoires`).
-- MCP SECIB local : `mcp-secib/src/tools/document.ts` — contient le pattern body-on-GET éprouvé pour `GetListeDocument`, peut aussi contenir la piste pour le contenu binaire brut.
+- Spec initiale : ce fichier (historique `git log`).
+- Plan d'implémentation gateway : `npl-api-gateway/docs/plans/2026-04-17-plan6-document-content-binaire.md`.
+- Doc consommateur : `npl-api-gateway/docs/INTEGRATION_GUIDE.md § 5.7` + `§ 6.5`.
+- Route : `npl-api-gateway/src/routes/documents.ts` (`/:id/content`).
+- Client binaire : `npl-api-gateway/src/secib/client.ts` (`requestBinary`).
