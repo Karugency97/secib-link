@@ -18,13 +18,12 @@
     "accountsRead",
     "compose",
     "storage",
-    "notifications",
     "https://secibneo.secib.fr/*",
     "https://api.secib.fr/*",
     "https://apisecib.nplavocat.com/*"
   ],
   "background": {
-    "scripts": ["sidebar/secib-api.js", "compose/state.js", "background.js"]
+    "scripts": ["background.js"]
   },
   "message_display_action": {
     "default_title": "SECIB Link — Dossiers liés à l'expéditeur",

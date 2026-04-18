@@ -238,17 +238,6 @@ const SecibAPI = (() => {
   }
 
   /**
-   * Crée un répertoire dans un dossier.
-   * Endpoint best-guess (pattern SaveDocument). Si l'API renvoie 404/400,
-   * l'appelant (panel.js) bascule sur le fallback racine du dossier.
-   */
-  async function creerRepertoire(dossierId, libelle) {
-    const did = Number(dossierId);
-    const body = { DossierId: did, Libelle: String(libelle).trim() };
-    return apiCall("POST", "/Document/SaveRepertoire", { body });
-  }
-
-  /**
    * Liste les parties d'un dossier via la gateway NPL-SECIB.
    * Endpoint : GET /api/v1/dossiers/{dossierId}/parties.
    */
@@ -311,20 +300,6 @@ const SecibAPI = (() => {
     return apiCall("POST", "/Document/SaveOrUpdateDocument", { body });
   }
 
-  /**
-   * Enregistre un mail RFC822 (.eml) dans un dossier SECIB.
-   * Thin wrapper sur saveDocument — expose l'intention dans le code appelant.
-   */
-  async function saveEmailMessage({ dossierId, repertoireId, emlBase64, fileName }) {
-    return saveDocument({
-      fileName,
-      dossierId,
-      repertoireId,
-      contentBase64: emlBase64,
-      isAnnexe: false
-    });
-  }
-
   return {
     getConfig,
     authenticate,
@@ -336,12 +311,10 @@ const SecibAPI = (() => {
     getDossiersPersonne,
     getDossierDetail,
     getRepertoiresDossier,
-    creerRepertoire,
     getPartiesDossier,
     getDocumentsDossier,
     getDocumentContent,
     rechercherDossiers,
-    saveDocument,
-    saveEmailMessage
+    saveDocument
   };
 })();

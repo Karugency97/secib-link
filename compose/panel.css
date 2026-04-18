@@ -643,17 +643,3 @@ body {
   font-style: italic;
   font-size: 12px;
 }
-
-/* ─── Section Archivage (§5) ────────────────────────────── */
-
-.archive-toggle {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  cursor: pointer;
-}
-
-.archive-toggle input[disabled] + span {
-  opacity: 0.55;
-  cursor: not-allowed;
-}

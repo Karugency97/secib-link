@@ -24,11 +24,6 @@
   const attachmentsSection = document.getElementById("attachments-section");
   const attachmentsTree = document.getElementById("attachments-tree");
 
-  const archiveSection = document.getElementById("archive-section");
-  const archiveEnabled = document.getElementById("archive-enabled");
-  const archiveLabel = document.getElementById("archive-label");
-  const archiveHint = document.getElementById("archive-hint");
-
   const applyProgress = document.getElementById("apply-progress");
   const applyFill = document.getElementById("apply-fill");
   const applyLabel = document.getElementById("apply-label");
@@ -39,8 +34,6 @@
   // ---- État ----
   let composeTabId = null;
   let currentDossier = null;            // { DossierId, Code, Nom }
-  let archiveRepertoireId = null;       // null si inaccessible
-  let createdAutoEmail = false;
   let partiesSelection = new Map();     // miroir de ContactsList.getSelection()
   const documentsSelected = new Map();  // key: DocumentId → DTO
 
@@ -91,9 +84,6 @@
         refreshComposeSubject();
       }
     }
-    if (msg.type === "secib-link/archiveResult") {
-      showApplyFeedback(msg.success ? "success" : "error", msg.message);
-    }
   });
 
   async function refreshComposeSubject() {
@@ -112,9 +102,6 @@
     const did = Number(st.dossierId);
     if (!Number.isFinite(did)) return;
     currentDossier = { DossierId: did, Code: st.dossierCode, Nom: st.dossierNom };
-    archiveRepertoireId = st.archiveRepertoireId || null;
-    createdAutoEmail = !!st.createdAutoEmail;
-    archiveEnabled.checked = st.archiveEnabled !== false;
     showDossierCard();
     await loadDossierContent(did);
   }
@@ -152,7 +139,6 @@
   async function loadDossierContent(dossierId) {
     contactsSection.classList.remove("hidden");
     attachmentsSection.classList.remove("hidden");
-    archiveSection.classList.remove("hidden");
 
     contactsList.innerHTML = `<div class="contacts-empty">Chargement…</div>`;
 
@@ -172,8 +158,6 @@
     const documents = (documentsRes && !documentsRes.error && Array.isArray(documentsRes)) ? documentsRes : [];
     const pjNodes = buildPJNodes(repertoires, documents, dossierId);
     attachmentsTreeView.setRootNodes(pjNodes);
-
-    await resolveArchiveRepertoire(repertoires);
   }
 
   function buildPJNodes(repertoires, documents, dossierId) {
@@ -225,37 +209,6 @@
     return repNodes;
   }
 
-  async function resolveArchiveRepertoire(repertoires) {
-    archiveLabel.textContent = `Archiver le mail dans « Email »`;
-    archiveEnabled.disabled = false;
-    archiveHint.textContent = "";
-
-    const email = (repertoires || []).find((r) => (r.Libelle || "").toLowerCase() === "email");
-    if (email) {
-      archiveRepertoireId = email.RepertoireId;
-      createdAutoEmail = false;
-      await persistState();
-      return;
-    }
-    try {
-      const created = await SecibAPI.creerRepertoire(currentDossier.DossierId, "Email");
-      archiveRepertoireId = created && created.RepertoireId ? created.RepertoireId : null;
-      createdAutoEmail = !!archiveRepertoireId;
-      if (!archiveRepertoireId) throw new Error("Création Email : RepertoireId manquant");
-      await persistState();
-    } catch (err) {
-      archiveRepertoireId = null;
-      archiveEnabled.disabled = true;
-      archiveEnabled.checked = false;
-      archiveHint.textContent = "Impossible d'accéder au répertoire Email (" + err.message + ").";
-      await persistState();
-    }
-  }
-
-  archiveEnabled.addEventListener("change", () => {
-    persistState();
-  });
-
   function handleDocumentToggle(docDto, included) {
     if (included) {
       documentsSelected.set(docDto.DocumentId, docDto);
@@ -275,7 +228,6 @@
 
   dcClear.addEventListener("click", async () => {
     currentDossier = null;
-    archiveRepertoireId = null;
     partiesSelection.clear();
     documentsSelected.clear();
     contacts.clear();
@@ -283,7 +235,6 @@
     dossierSection.classList.add("hidden");
     contactsSection.classList.add("hidden");
     attachmentsSection.classList.add("hidden");
-    archiveSection.classList.add("hidden");
     treeSearch.value = "";
     treeSearch.focus();
     searchTree.setRootNodes([]);
@@ -297,10 +248,7 @@
     await ComposeState.set(composeTabId, {
       dossierId: currentDossier.DossierId,
       dossierCode: currentDossier.Code,
-      dossierNom: currentDossier.Nom,
-      archiveRepertoireId,
-      archiveEnabled: archiveEnabled.checked,
-      createdAutoEmail
+      dossierNom: currentDossier.Nom
     });
   }
 

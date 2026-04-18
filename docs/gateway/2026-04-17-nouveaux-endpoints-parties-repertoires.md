@@ -1,48 +1,53 @@
 # Gateway NPL-SECIB — endpoints `/parties` et `/repertoires`
 
-**Destinataire :** mainteneur de la gateway NPL-SECIB (projet hors repo SECIB-Link).
-**Contexte :** SECIB-Link (extension Thunderbird) a besoin de lire les parties et répertoires d'un dossier SECIB. Les endpoints cibles exigent un body JSON sur une requête GET, ce que le navigateur refuse (`fetch` ne laisse pas passer de body sur GET). La gateway sert de passe-plat — même pattern que l'endpoint `/documents` déjà en production.
+**Statut :** ✅ Résolu 2026-04-17 — aucun changement gateway nécessaire.
+**Destinataire :** équipe SECIB-Link (Thunderbird).
 
-## Endpoint 1 : `GET /api/v1/parties?dossierId=N`
+## Résolution
 
-**Query params** :
-- `dossierId` (entier, obligatoire)
+Les deux endpoints demandés existent **déjà en production** sous une forme différente de celle proposée dans la spec initiale. Ils sont en place depuis Plan 2 (commit `cac0ece`, `feat(dossiers)`) et documentés dans `npl-api-gateway/docs/INTEGRATION_GUIDE.md:175,177`.
 
-**Traitement** :
-1. Authentifier contre SECIB (OAuth2 client_credentials, même cabinet que `/documents`).
-2. Forward vers `GET https://secibneo.secib.fr/{version}/{cabinetId}/api/v1/Partie/Get` avec body JSON `{ "DossierId": <N> }` (body-on-GET via `node:https`).
-3. Unwrap la réponse SECIB (tableau de `PartieApiDto`).
+| Besoin spec initiale | Endpoint existant à utiliser |
+|---|---|
+| `GET /api/v1/parties?dossierId=N` | `GET /api/v1/dossiers/{N}/parties` |
+| `GET /api/v1/repertoires?dossierId=N` | `GET /api/v1/dossiers/{N}/repertoires` |
 
-**Réponse** : `200 { "data": PartieApiDto[] }`
+Les deux :
+- Sont mappés respectivement sur `/Partie/Get` et `/Document/GetListRepertoireDossier` côté SECIB.
+- Utilisent **query params** (pas de body-on-GET) — aucun contournement `node:https` requis côté gateway ou client.
+- Renvoient le format attendu : `200 { "data": PartieApiDto[] }` / `200 { "data": RepertoireApiDto[] }`.
+- Passent par le même `X-API-Key` que le reste de la gateway.
 
-**Erreurs** :
-- `400` si `dossierId` manquant ou non numérique.
-- `401` si auth gateway échoue (propager code SECIB).
-- `500 { "error": { "code": "UPSTREAM_ERROR", "message": "..." } }` sinon.
+## Pourquoi le body-on-GET n'est pas nécessaire
 
-## Endpoint 2 : `GET /api/v1/repertoires?dossierId=N`
+La spec initiale généralisait à tort le pattern de `/Document/GetListeDocument` (seul endpoint SECIB *vraiment* body-on-GET) à `/Partie/Get` et `/Document/GetListRepertoireDossier`. Ces deux derniers acceptent `?dossierId=N` en query string — comportement confirmé par le MCP SECIB local (`mcp-secib/src/tools/partie.ts:38`, `mcp-secib/src/tools/document.ts:137`), utilisé en production.
 
-**Query params** :
-- `dossierId` (entier, obligatoire)
+## À faire côté SECIB-Link
 
-**Traitement** :
-1. Auth identique.
-2. Forward vers `GET https://secibneo.secib.fr/{version}/{cabinetId}/api/v1/Document/GetListRepertoireDossier` avec body JSON `{ "DossierId": <N> }` (body-on-GET).
-3. Unwrap.
+Remplacer les appels prévus :
+```js
+// Avant (spec initiale)
+fetch(`${GATEWAY}/api/v1/parties?dossierId=${id}`, { headers: { 'X-API-Key': key } })
+fetch(`${GATEWAY}/api/v1/repertoires?dossierId=${id}`, { headers: { 'X-API-Key': key } })
 
-**Réponse** : `200 { "data": RepertoireApiDto[] }`
-
-**Erreurs** : mêmes codes que ci-dessus.
-
-## Tests côté gateway
-
-Pour un dossier connu (ex. `DossierId=42`) :
+// Après
+fetch(`${GATEWAY}/api/v1/dossiers/${id}/parties`, { headers: { 'X-API-Key': key } })
+fetch(`${GATEWAY}/api/v1/dossiers/${id}/repertoires`, { headers: { 'X-API-Key': key } })
 ```
-curl -H "X-API-Key: $GATEWAY_KEY" "https://apisecib.nplavocat.com/api/v1/parties?dossierId=42"
-curl -H "X-API-Key: $GATEWAY_KEY" "https://apisecib.nplavocat.com/api/v1/repertoires?dossierId=42"
+
+`fetch` browser-standard fonctionne — pas besoin de passe-plat dédié.
+
+## Tests
+
+```bash
+curl -H "X-API-Key: $GATEWAY_KEY" "https://apisecib.nplavocat.com/api/v1/dossiers/42/parties"
+curl -H "X-API-Key: $GATEWAY_KEY" "https://apisecib.nplavocat.com/api/v1/dossiers/42/repertoires"
 ```
+
 Les deux doivent renvoyer `200 { "data": [...] }`.
 
-## Référence d'implémentation
+## Références
 
-Le MCP SECIB local (`reference_mcp_secib` en mémoire) contient un exemple de body-on-GET en Node.js réussi pour `GetListeDocument`. Même technique à appliquer ici.
+- Source gateway : `npl-api-gateway/src/routes/dossiers.ts:40-65`
+- Doc consommateur : `npl-api-gateway/docs/INTEGRATION_GUIDE.md:175,177,487`
+- Exemple client : `INTEGRATION_GUIDE.md:487` (`getDossierParties`)

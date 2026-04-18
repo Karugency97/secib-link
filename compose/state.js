@@ -6,10 +6,7 @@
 //   {
 //     dossierId: number,
 //     dossierCode: string,
-//     dossierNom: string,
-//     archiveRepertoireId: number | null,
-//     archiveEnabled: boolean,
-//     createdAutoEmail: boolean
+//     dossierNom: string
 //   }
 
 const ComposeState = (() => {
