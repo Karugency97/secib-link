@@ -231,10 +231,10 @@ const SecibAPI = (() => {
 
   /**
    * Liste les répertoires d'un dossier via la gateway NPL-SECIB.
-   * Contourne le body-on-GET de SECIB (/Document/GetListRepertoireDossier).
+   * Endpoint : GET /api/v1/dossiers/{dossierId}/repertoires.
    */
   async function getRepertoiresDossier(dossierId) {
-    return gatewayCall("/repertoires", { dossierId: Number(dossierId) });
+    return gatewayCall(`/dossiers/${Number(dossierId)}/repertoires`);
   }
 
   /**
@@ -250,10 +250,10 @@ const SecibAPI = (() => {
 
   /**
    * Liste les parties d'un dossier via la gateway NPL-SECIB.
-   * Contourne le body-on-GET de SECIB (/Partie/Get).
+   * Endpoint : GET /api/v1/dossiers/{dossierId}/parties.
    */
   async function getPartiesDossier(dossierId) {
-    return gatewayCall("/parties", { dossierId: Number(dossierId) });
+    return gatewayCall(`/dossiers/${Number(dossierId)}/parties`);
   }
 
   /**
