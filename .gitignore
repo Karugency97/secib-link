@@ -1,6 +1,7 @@
 .DS_Store
 *.xpi
 node_modules/
+web-ext-artifacts/
 .env
 .env.local
 *.log
