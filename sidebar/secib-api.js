@@ -129,6 +129,54 @@ const SecibAPI = (() => {
     }
   }
 
+  // ─── Gateway NPL-SECIB ──────────────────────────────────────────
+  // Contourne les endpoints SECIB qui exigent body-on-GET (impossibles en fetch).
+  // Config : browser.storage.local { gateway_url, gateway_api_key }
+
+  async function getGatewayConfig() {
+    const stored = await browser.storage.local.get(["gateway_url", "gateway_api_key"]);
+    if (!stored.gateway_url || !stored.gateway_api_key) {
+      throw new Error("GATEWAY_CONFIG_MISSING");
+    }
+    return {
+      baseUrl: stored.gateway_url.replace(/\/+$/, ""),
+      apiKey: stored.gateway_api_key.trim()
+    };
+  }
+
+  /**
+   * Appel générique vers la gateway NPL-SECIB (https://apisecib.nplavocat.com/api/v1).
+   * La gateway unwrap SECIB et renvoie { data: <payload> } — on extrait `.data`.
+   */
+  async function gatewayCall(path, queryParams) {
+    const config = await getGatewayConfig();
+    const url = new URL(`${config.baseUrl}/api/v1${path}`);
+    if (queryParams) {
+      for (const [k, v] of Object.entries(queryParams)) {
+        if (v !== undefined && v !== null && v !== "") {
+          url.searchParams.set(k, v);
+        }
+      }
+    }
+    console.log(`[SECIB Link] Gateway ${url.toString()}`);
+    const response = await fetch(url.toString(), {
+      method: "GET",
+      headers: {
+        "X-API-Key": config.apiKey,
+        "Accept": "application/json"
+      }
+    });
+    const text = await response.text();
+    let payload = null;
+    try { payload = JSON.parse(text); } catch {}
+    if (!response.ok) {
+      const code = payload && payload.error && payload.error.code ? payload.error.code : `HTTP_${response.status}`;
+      const msg = payload && payload.error && payload.error.message ? payload.error.message : text.slice(0, 200);
+      throw new Error(`GATEWAY ${code}: ${msg}`);
+    }
+    return payload && "data" in payload ? payload.data : payload;
+  }
+
   // ─── Méthodes publiques ──────────────────────────────────────────
 
   /**
@@ -181,38 +229,42 @@ const SecibAPI = (() => {
     return apiCall("GET", "/Dossier/GetDossierById", { query: { dossierId } });
   }
 
-  /** Liste les répertoires d'un dossier (pour choisir où ranger un document) */
+  /**
+   * Liste les répertoires d'un dossier via la gateway NPL-SECIB.
+   * Endpoint : GET /api/v1/dossiers/{dossierId}/repertoires.
+   */
   async function getRepertoiresDossier(dossierId) {
-    return apiCall("GET", "/Document/GetListRepertoireDossier", { query: { dossierId } });
+    return gatewayCall(`/dossiers/${Number(dossierId)}/repertoires`);
   }
 
   /**
-   * Liste les parties d'un dossier (Client / Adversaire / Juridiction / Correspondant).
-   * Chaque PartieApiDto embarque la Personne avec ses coordonnées (Email, Téléphone, ...).
+   * Liste les parties d'un dossier via la gateway NPL-SECIB.
+   * Endpoint : GET /api/v1/dossiers/{dossierId}/parties.
    */
   async function getPartiesDossier(dossierId) {
-    return apiCall("GET", "/Partie/Get", { query: { dossierId } });
+    return gatewayCall(`/dossiers/${Number(dossierId)}/parties`);
   }
 
   /**
-   * Liste les documents d'un dossier (range max 50 par appel).
-   * Renvoie DocumentCompactApiDto[] : DocumentId, FileName, Extension, Date, RepertoireId, RepertoireLibelle, Type, IsAnnexe.
+   * Liste les documents d'un dossier via la gateway NPL-SECIB.
+   * Renvoie DocumentCompactApiDto[] : DocumentId, Libelle, Extension, Date, RepertoireId, RepertoireLibelle, Type, DossierId, DossierCode, DossierNom.
+   *
+   * L'endpoint SECIB /Document/GetListeDocument attend ses filtres dans le body JSON
+   * d'une requête GET, ce que le navigateur refuse. La gateway (Node.js) fait le
+   * passe-plat via node:https et expose une API REST classique.
    */
-  async function getDocumentsDossier(dossierId, limit = 50, offset = 0) {
-    return apiCall("GET", "/Document/GetListeDocument", {
-      query: {
-        "filtreDocument.dossierId": dossierId,
-        range: `${offset}-${offset + limit - 1}`
-      }
-    });
+  async function getDocumentsDossier(dossierId) {
+    return gatewayCall("/documents", { dossierId: Number(dossierId) });
   }
 
   /**
-   * Récupère le contenu binaire d'un document encodé en base64.
-   * Renvoie DocumentContentApiDto : { DocumentId, FileName, Content (base64) }.
+   * Récupère le contenu binaire brut d'un document via la gateway NPL-SECIB.
+   * Endpoint : GET /api/v1/documents/{documentId}/content.
+   * Renvoie { documentId, fileName, mimeType, contentBase64 } — pas de conversion
+   * PDF côté serveur, tous les formats stockés dans SECIB sont supportés.
    */
   async function getDocumentContent(documentId) {
-    return apiCall("GET", "/Document/GetContentDocumentBase64", { query: { documentId } });
+    return gatewayCall(`/documents/${encodeURIComponent(documentId)}/content`);
   }
 
   /**

@@ -17,71 +17,36 @@
 
   <div id="error-zone" class="error-zone hidden"></div>
 
-  <!-- Bloc 1 : recherche dossier -->
+  <!-- §1 Recherche (arbre clients + dossiers) -->
   <section class="section">
-    <h2>Dossier SECIB</h2>
+    <h2>Rechercher un client ou un dossier SECIB</h2>
     <div class="search-bar">
-      <input type="search" id="dossier-search" placeholder="Code ou nom du dossier…" autocomplete="off">
-      <div id="dossier-results" class="dossier-results hidden"></div>
+      <input type="search" id="tree-search" placeholder="Nom de client, code ou nom de dossier…" autocomplete="off">
     </div>
-    <div id="dossier-card" class="dossier-card hidden">
+    <div id="search-results" class="tree-container"></div>
+  </section>
+
+  <!-- §2 Dossier sélectionné -->
+  <section id="dossier-section" class="section hidden">
+    <div class="dossier-card">
       <div class="dossier-top">
         <span id="dc-code" class="dossier-ref"></span>
         <button type="button" id="dc-clear" class="btn-link">Changer</button>
       </div>
       <div id="dc-nom" class="dossier-title"></div>
-      <div id="dc-meta" class="dossier-meta"></div>
     </div>
   </section>
 
-  <!-- Bloc 2 : parties -->
-  <section id="parties-section" class="section hidden">
-    <h2>Parties du dossier <span id="parties-count" class="count"></span></h2>
-    <div class="filter-row">
-      <button type="button" data-type-filter="all" class="filter-btn active">Tous</button>
-      <button type="button" data-type-filter="1" class="filter-btn">Client</button>
-      <button type="button" data-type-filter="2" class="filter-btn">Adversaire</button>
-      <button type="button" data-type-filter="3" class="filter-btn">Juridiction</button>
-      <button type="button" data-type-filter="4" class="filter-btn">Correspondant</button>
-    </div>
-    <div id="parties-loader" class="loader-inline hidden">Chargement…</div>
-    <div id="parties-empty" class="empty hidden">Aucune partie dans ce dossier.</div>
-    <table id="parties-table" class="data-table hidden">
-      <thead>
-        <tr>
-          <th></th>
-          <th>Nom &amp; email</th>
-          <th class="th-recipient">Destinataire</th>
-        </tr>
-      </thead>
-      <tbody id="parties-tbody"></tbody>
-    </table>
+  <!-- §3 Contacts -->
+  <section id="contacts-section" class="section hidden">
+    <h2>Contacts</h2>
+    <div id="contacts-list" class="contacts-list"></div>
   </section>
 
-  <!-- Bloc 3 : documents -->
-  <section id="documents-section" class="section hidden">
-    <h2>Documents du dossier <span id="documents-count" class="count"></span></h2>
-    <div class="filter-row">
-      <label class="filter-label" for="rep-filter">Répertoire</label>
-      <select id="rep-filter">
-        <option value="all">Tous les répertoires</option>
-      </select>
-    </div>
-    <div id="documents-loader" class="loader-inline hidden">Chargement…</div>
-    <div id="documents-empty" class="empty hidden">Aucun document dans ce dossier.</div>
-    <table id="documents-table" class="data-table hidden">
-      <thead>
-        <tr>
-          <th></th>
-          <th>Document</th>
-          <th class="th-meta">Date</th>
-        </tr>
-      </thead>
-      <tbody id="documents-tbody"></tbody>
-    </table>
-    <div id="size-summary" class="size-summary hidden">
-      <span id="size-text"></span>
-    </div>
+  <!-- §4 Pièces jointes -->
+  <section id="attachments-section" class="section hidden">
+    <h2>Pièces jointes</h2>
+    <div id="attachments-tree" class="tree-container"></div>
   </section>
 
   <!-- Footer / actions -->
@@ -97,6 +62,9 @@
   </footer>
 
   <script src="../sidebar/secib-api.js"></script>
+  <script src="state.js"></script>
+  <script src="tree.js"></script>
+  <script src="contacts.js"></script>
   <script src="panel.js"></script>
 </body>
 </html>
