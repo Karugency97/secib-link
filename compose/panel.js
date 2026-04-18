@@ -307,9 +307,9 @@
         updateProgress(done, docs.length, label);
         try {
           const content = await SecibAPI.getDocumentContent(d.DocumentId);
-          const base64 = content && content.Content ? content.Content : "";
+          const base64 = content && content.contentBase64 ? content.contentBase64 : "";
           if (!base64) throw new Error("Contenu vide");
-          const file = base64ToFile(base64, content.FileName || label, guessMime(label));
+          const file = base64ToFile(base64, content.fileName || label, content.mimeType || guessMime(label));
           totalBytes += file.size;
           if (totalBytes > MAX_TOTAL_BYTES) {
             errors.push(`${label} : limite 25 Mo dépassée`);

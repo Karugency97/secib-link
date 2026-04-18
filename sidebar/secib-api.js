@@ -258,11 +258,13 @@ const SecibAPI = (() => {
   }
 
   /**
-   * Récupère le contenu binaire d'un document encodé en base64.
-   * Renvoie DocumentContentApiDto : { DocumentId, FileName, Content (base64) }.
+   * Récupère le contenu binaire brut d'un document via la gateway NPL-SECIB.
+   * Endpoint : GET /api/v1/documents/{documentId}/content.
+   * Renvoie { documentId, fileName, mimeType, contentBase64 } — pas de conversion
+   * PDF côté serveur, tous les formats stockés dans SECIB sont supportés.
    */
   async function getDocumentContent(documentId) {
-    return apiCall("GET", "/Document/GetContentDocumentBase64", { query: { documentId } });
+    return gatewayCall(`/documents/${encodeURIComponent(documentId)}/content`);
   }
 
   /**
