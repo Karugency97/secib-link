@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Ajouter un sélecteur « Étape parapheur » (optionnel) dans la modale d'enregistrement de la sidebar SECIB-Link, et migrer tout le flux save sidebar vers la Gateway NPL-SECIB.
+**Goal:** Ajouter deux sélecteurs couplés « Étape parapheur » + « Destinataire » (optionnels, ensemble) dans la modale d'enregistrement de la sidebar SECIB-Link, et migrer tout le flux save sidebar vers la Gateway NPL-SECIB.
 
-**Architecture:** Nouvel endpoint Gateway `POST /api/v1/documents/save-or-update` en passe-plat vers `/Document/SaveOrUpdateDocument` côté SECIB, acceptant un `EtapeParapheurId` optionnel. Côté extension, le dropdown étape est chargé en parallèle des répertoires, caché si cabinet sans étapes. Gateway devient prérequis dur du save : si absente, bouton Enregistrer désactivé avec bandeau explicite.
+**Architecture:** Nouvel endpoint Gateway `POST /api/v1/documents/save-or-update` en passe-plat vers `/Document/SaveOrUpdateDocument` côté SECIB, acceptant `EtapeParapheurId` (GUID) et `DestinataireId` (int) optionnels **ensemble**. Côté extension, les dropdowns sont chargés en parallèle des répertoires depuis des endpoints Gateway déjà existants (`/referentiel/etapes-parapheur`, `/referentiel/intervenants`). Le dropdown destinataire reste désactivé tant qu'aucune étape n'est choisie.
 
 **Tech Stack:** TypeScript/Hono (Gateway), Vanilla JS/WebExtensions (sidebar), Vitest (Gateway tests), tests manuels (sidebar).
 
@@ -12,41 +12,22 @@
 - Gateway : `/Volumes/KARUG/API GATEWAY SECIB NPL/npl-api-gateway` (Part A)
 - SECIB-Link : working directory courant `/Volumes/KARUG/API SECIB/SECIB-Link/.claude/worktrees/interesting-shtern-f0877f` (Part B)
 
-**Ordre d'exécution :** Phase 0 → Part A (Gateway) → Part B (SECIB-Link). La Part B dépend du déploiement de l'endpoint Gateway.
+**Ordre d'exécution :** Part A (Gateway) → Part B (SECIB-Link). La Part B dépend du déploiement de l'endpoint Gateway.
 
 ---
 
-## Phase 0 — Validation manuelle de l'hypothèse A
+## Phase 0 — Validation API SECIB
 
-**But :** Confirmer que `/Document/SaveOrUpdateDocument` accepte le champ `EtapeParapheurId` dans son body. Si cette hypothèse tombe, reprendre le design (hypothèse B = 2 appels).
+**Statut** : ✅ **Validée 2026-04-19** (voir spec, section « Findings Phase 0 »).
 
-- [ ] **Step 1: Récupérer un EtapeParapheurId valide**
+Findings à retenir pour l'implémentation :
 
-Via la Gateway déjà en place :
-```bash
-curl -s -H "X-API-Key: $GW_KEY" \
-  "https://apisecib.nplavocat.com/api/v1/referentiel/etapes-parapheur" | jq '.data[0]'
-```
-Expected : JSON `{ "Id": <int>, "Libelle": "<str>", ... }`. Noter `Id` pour l'étape suivante.
+- `/Document/SaveOrUpdateDocument` accepte `EtapeParapheurId` (GUID string) + `DestinataireId` (int) directement dans le body.
+- Les deux champs sont **indissociables** — si un seul est fourni, SECIB renvoie `HTTP 400 "BusinessException_EtapeParapheurDestinataireIndisociable"`.
+- `DestinataireId` correspond à un `UtilisateurId` tel que renvoyé par `/Utilisateur/ListIntervenant`.
+- Les endpoints de lecture (`/referentiel/etapes-parapheur`, `/referentiel/intervenants`) **existent déjà** dans la Gateway avec cache 24h. Aucune modification Gateway côté lecture.
 
-- [ ] **Step 2: Tenter un SaveOrUpdateDocument avec EtapeParapheurId**
-
-Via le MCP SECIB local ou un outil interne d'appel SECIB (hors périmètre Gateway pour ce test) :
-```bash
-# Construire un body minimal de test :
-# { FileName: "test-parapheur.txt", DossierId: <id dossier test>,
-#   Content: "<base64 d'un 'hello'>", IsAnnexe: false,
-#   EtapeParapheurId: <Id récupéré step 1> }
-```
-Appeler `POST /Document/SaveOrUpdateDocument` côté SECIB avec ce body.
-
-- [ ] **Step 3: Vérifier dans SECIB Neo**
-
-Ouvrir SECIB Neo → aller sur le dossier de test → vérifier que `test-parapheur.txt` apparaît dans le parapheur à l'étape attendue. Vérifier via `/Document/GetInfosDocument?documentId=<Id>` que le champ EtapeParapheur est bien renseigné.
-
-**Décision :**
-- ✅ Si OK → continuer avec Part A
-- ❌ Si refusé / ignoré → stopper le plan, rouvrir la spec pour basculer sur hypothèse B
+**Nettoyage à faire** : supprimer les docs de probe (`probe-A.txt`, `test-parapheur-phase0.txt`, etc.) dans le dossier TEST (DossierId 164) depuis SECIB Neo UI.
 
 ---
 
@@ -54,7 +35,7 @@ Ouvrir SECIB Neo → aller sur le dossier de test → vérifier que `test-paraph
 
 **Working directory :** `/Volumes/KARUG/API GATEWAY SECIB NPL/npl-api-gateway`
 
-### Task A1 : Test d'intégration failing pour POST /documents/save-or-update
+### Task A1 : Tests d'intégration failing pour POST /documents/save-or-update
 
 **Files:**
 - Modify: `tests/integration/documents.test.ts` (ajouter un bloc describe en fin de fichier)
@@ -65,10 +46,13 @@ Ouvrir `tests/integration/documents.test.ts` et ajouter avant la dernière accol
 
 ```typescript
   describe('POST /documents/save-or-update', () => {
-    it('pass-through SaveOrUpdateDocument sans EtapeParapheurId', async () => {
+    const ETAPE_ID = 'c65c248e-e1b9-4f45-a0b5-b41a00d744cb'; // GUID fixture
+    const DEST_ID = 3;
+
+    it('pass-through SaveOrUpdateDocument sans étape ni destinataire', async () => {
       agent.get('https://secib.test')
         .intercept({ path: '/8.1.4/cab/api/v1/Document/SaveOrUpdateDocument', method: 'POST' })
-        .reply(200, { DocumentId: 123, Nom: 'mail.eml' });
+        .reply(200, { DocumentId: 'f666a2db-0060-4a97-88c4-b43101810f4f', FileName: 'mail.eml' });
 
       const res = await app.request('/documents/save-or-update', {
         method: 'POST',
@@ -83,16 +67,18 @@ Ouvrir `tests/integration/documents.test.ts` et ajouter avant la dernière accol
       });
 
       expect(res.status).toBe(200);
-      expect(await res.json()).toEqual({ data: { DocumentId: 123, Nom: 'mail.eml' } });
+      expect(await res.json()).toEqual({
+        data: { DocumentId: 'f666a2db-0060-4a97-88c4-b43101810f4f', FileName: 'mail.eml' },
+      });
     });
 
-    it('propage EtapeParapheurId au body SECIB quand fourni', async () => {
+    it('propage EtapeParapheurId + DestinataireId au body SECIB quand fournis ensemble', async () => {
       let forwardedBody: unknown = null;
       agent.get('https://secib.test')
         .intercept({ path: '/8.1.4/cab/api/v1/Document/SaveOrUpdateDocument', method: 'POST' })
         .reply(200, (req) => {
           forwardedBody = JSON.parse(req.body as string);
-          return { DocumentId: 124 };
+          return { DocumentId: 'f666a2db-0060-4a97-88c4-b43101810f4f' };
         });
 
       const res = await app.request('/documents/save-or-update', {
@@ -103,15 +89,51 @@ Ouvrir `tests/integration/documents.test.ts` et ajouter avant la dernière accol
           DossierId: 1911,
           Content: 'QUFB',
           IsAnnexe: false,
-          EtapeParapheurId: 7,
+          EtapeParapheurId: ETAPE_ID,
+          DestinataireId: DEST_ID,
         }),
       });
 
       expect(res.status).toBe(200);
-      expect(forwardedBody).toMatchObject({ EtapeParapheurId: 7 });
+      expect(forwardedBody).toMatchObject({
+        EtapeParapheurId: ETAPE_ID,
+        DestinataireId: DEST_ID,
+      });
     });
 
-    it('400 invalid_json sur body vide', async () => {
+    it('400 etape_destinataire_indissociable si EtapeParapheurId sans DestinataireId', async () => {
+      const res = await app.request('/documents/save-or-update', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          FileName: 'mail.eml',
+          DossierId: 1911,
+          Content: 'QUFB',
+          IsAnnexe: false,
+          EtapeParapheurId: ETAPE_ID,
+        }),
+      });
+      expect(res.status).toBe(400);
+      expect(await res.json()).toMatchObject({ error: { code: 'etape_destinataire_indissociable' } });
+    });
+
+    it('400 etape_destinataire_indissociable si DestinataireId sans EtapeParapheurId', async () => {
+      const res = await app.request('/documents/save-or-update', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          FileName: 'mail.eml',
+          DossierId: 1911,
+          Content: 'QUFB',
+          IsAnnexe: false,
+          DestinataireId: DEST_ID,
+        }),
+      });
+      expect(res.status).toBe(400);
+      expect(await res.json()).toMatchObject({ error: { code: 'etape_destinataire_indissociable' } });
+    });
+
+    it('400 invalid_json sur body non-JSON', async () => {
       const res = await app.request('/documents/save-or-update', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -121,7 +143,7 @@ Ouvrir `tests/integration/documents.test.ts` et ajouter avant la dernière accol
       expect(await res.json()).toMatchObject({ error: { code: 'invalid_json' } });
     });
 
-    it('422 secib_client_error quand SECIB refuse EtapeParapheurId', async () => {
+    it('propage 422 secib_client_error quand SECIB refuse (étape inconnue)', async () => {
       agent.get('https://secib.test')
         .intercept({ path: '/8.1.4/cab/api/v1/Document/SaveOrUpdateDocument', method: 'POST' })
         .reply(422, { message: 'EtapeParapheurId invalide' });
@@ -134,7 +156,8 @@ Ouvrir `tests/integration/documents.test.ts` et ajouter avant la dernière accol
           DossierId: 1911,
           Content: 'QUFB',
           IsAnnexe: false,
-          EtapeParapheurId: 999999,
+          EtapeParapheurId: '00000000-0000-0000-0000-000000000000',
+          DestinataireId: DEST_ID,
         }),
       });
       expect(res.status).toBe(422);
@@ -149,9 +172,9 @@ Ouvrir `tests/integration/documents.test.ts` et ajouter avant la dernière accol
 cd "/Volumes/KARUG/API GATEWAY SECIB NPL/npl-api-gateway"
 npx vitest run tests/integration/documents.test.ts -t "POST /documents/save-or-update"
 ```
-Expected : 4 tests FAIL (404 not found — la route n'existe pas encore).
+Expected : 6 tests FAIL (404 not found — la route n'existe pas encore).
 
-### Task A2 : Implémenter la route
+### Task A2 : Implémenter la route avec validation both-or-neither
 
 **Files:**
 - Modify: `src/routes/documents.ts` (ajouter une route avant le `return r`)
@@ -161,10 +184,23 @@ Expected : 4 tests FAIL (404 not found — la route n'existe pas encore).
 Ouvrir `src/routes/documents.ts`. Juste après la route `POST /` existante (qui map `UploadDocument`, vers ligne 104), ajouter :
 
 ```typescript
-  // POST /documents/save-or-update — pass-through SaveOrUpdateDocument avec EtapeParapheurId optionnel
+  // POST /documents/save-or-update — pass-through SaveOrUpdateDocument
+  // Accepte EtapeParapheurId (GUID) + DestinataireId (int) optionnels mais indissociables.
   r.post('/save-or-update', async (c) => {
     const body = await c.req.json().catch(() => null);
-    if (body === null) return fail(c, 400, 'invalid_json');
+    if (body === null || typeof body !== 'object') {
+      return fail(c, 400, 'invalid_json');
+    }
+    const hasEtape = body.EtapeParapheurId !== undefined && body.EtapeParapheurId !== null;
+    const hasDest = body.DestinataireId !== undefined && body.DestinataireId !== null;
+    if (hasEtape !== hasDest) {
+      return fail(
+        c,
+        400,
+        'etape_destinataire_indissociable',
+        'EtapeParapheurId et DestinataireId doivent être fournis ensemble',
+      );
+    }
     const res = await deps.secib.request('POST', '/Document/SaveOrUpdateDocument', { body });
     if (!res.ok) return failSecib(c, res);
     return ok(c, res.data);
@@ -176,7 +212,7 @@ Ouvrir `src/routes/documents.ts`. Juste après la route `POST /` existante (qui 
 ```bash
 npx vitest run tests/integration/documents.test.ts -t "POST /documents/save-or-update"
 ```
-Expected : 4 tests PASS.
+Expected : 6 tests PASS.
 
 - [ ] **Step 3: Lancer la suite complète pour vérifier l'absence de régression**
 
@@ -189,30 +225,30 @@ Expected : tous les tests PASS.
 
 ```bash
 git add src/routes/documents.ts tests/integration/documents.test.ts
-git commit -m "feat(documents): route POST /save-or-update avec EtapeParapheurId"
+git commit -m "feat(documents): route POST /save-or-update avec étape+destinataire"
 ```
 
 ### Task A3 : Documenter le nouvel endpoint
 
 **Files:**
-- Modify: `docs/INTEGRATION_GUIDE.md` (section 5.7 Documents, tableau)
+- Modify: `docs/INTEGRATION_GUIDE.md` (section 5.7 Documents)
 
 - [ ] **Step 1: Ajouter l'endpoint au tableau**
 
-Ouvrir `docs/INTEGRATION_GUIDE.md`, repérer le tableau dans la section 5.7 Documents. Ajouter une ligne juste après la ligne `POST | /documents | ... | Upload un document` :
+Dans la section 5.7 Documents, juste après la ligne `POST | /documents | ... | Upload un document`, ajouter :
 
 ```markdown
-| POST | `/documents/save-or-update` | Body SECIB `SaveOrUpdateDocument` (+ `EtapeParapheurId` optionnel) | non | Enregistre un document avec étape parapheur optionnelle |
+| POST | `/documents/save-or-update` | Body SECIB `SaveOrUpdateDocument` (+ `EtapeParapheurId` GUID / `DestinataireId` int optionnels ensemble) | non | Enregistre un document avec étape parapheur + destinataire optionnels |
 ```
 
 - [ ] **Step 2: Ajouter une section usage (§ 6.6)**
 
-Repérer la fin de la section § 6.5 (contenu binaire). Ajouter juste après :
+Juste après la fin de la section § 6.5 (contenu binaire), ajouter :
 
 ```markdown
 ### 6.6 Enregistrement d'un mail avec étape parapheur (`POST /documents/save-or-update`)
 
-Utilisé par l'extension Thunderbird SECIB-Link. Permet d'enregistrer un `.eml` (ou tout document) en l'associant optionnellement à une étape du parapheur SECIB — visible ensuite dans le parapheur du collaborateur ciblé.
+Utilisé par l'extension Thunderbird SECIB-Link. Permet d'enregistrer un `.eml` en l'associant optionnellement à une étape du parapheur SECIB et à un destinataire — le document apparaît ensuite dans le parapheur du collaborateur ciblé à l'étape choisie.
 
 **Body** :
 ```json
@@ -222,16 +258,21 @@ Utilisé par l'extension Thunderbird SECIB-Link. Permet d'enregistrer un `.eml` 
   "RepertoireId": 56,
   "Content": "<base64>",
   "IsAnnexe": false,
-  "EtapeParapheurId": 7
+  "EtapeParapheurId": "8e33ad58-f662-4afe-a4cc-b37100d61a20",
+  "DestinataireId": 3
 }
 ```
 
-`EtapeParapheurId` est omis si l'utilisateur n'a pas choisi d'étape. La liste des `Id` valides se récupère via `GET /referentiel/etapes-parapheur` (cache 24h).
+**Contraintes**
+- `EtapeParapheurId` (GUID) et `DestinataireId` (int) sont optionnels mais **indissociables** — fournir l'un sans l'autre → `400 etape_destinataire_indissociable` (validé côté Gateway, pas d'appel SECIB).
+- La liste des `EtapeParapheurId` valides se récupère via `GET /referentiel/etapes-parapheur` (cache 24h).
+- La liste des `DestinataireId` valides (= `UtilisateurId` d'intervenants) se récupère via `GET /referentiel/intervenants` (cache 24h).
 
 **Réponses :**
 - `200 { data: { DocumentId, ... } }` — pass-through de la réponse SECIB.
 - `400 invalid_json` — body JSON invalide.
-- `422 secib_client_error` — `EtapeParapheurId` inconnu côté SECIB (message dans `error.message`).
+- `400 etape_destinataire_indissociable` — un seul des deux champs parapheur fourni.
+- `422 secib_client_error` — SECIB rejette (étape/destinataire inconnu, etc.) ; message SECIB dans `error.message`.
 - `502 secib_upstream` — échec upstream SECIB.
 
 **Exemple client** :
@@ -240,7 +281,10 @@ Utilisé par l'extension Thunderbird SECIB-Link. Permet d'enregistrer un `.eml` 
 const res = await fetch(`${GW}/api/v1/documents/save-or-update`, {
   method: 'POST',
   headers: { 'content-type': 'application/json', 'X-API-Key': KEY },
-  body: JSON.stringify({ FileName, DossierId, RepertoireId, Content, IsAnnexe: false, EtapeParapheurId }),
+  body: JSON.stringify({
+    FileName, DossierId, RepertoireId, Content, IsAnnexe: false,
+    EtapeParapheurId, DestinataireId,
+  }),
 });
 ```
 ```
@@ -249,14 +293,14 @@ const res = await fetch(`${GW}/api/v1/documents/save-or-update`, {
 
 ```bash
 git add docs/INTEGRATION_GUIDE.md
-git commit -m "docs(guide): endpoint POST /documents/save-or-update"
+git commit -m "docs(guide): endpoint POST /documents/save-or-update avec destinataire"
 ```
 
 ### Task A4 : Push Gateway + PR
 
 - [ ] **Step 1: Pousser la branche**
 
-La Gateway est sur sa propre branche. Depuis `/Volumes/KARUG/API GATEWAY SECIB NPL/npl-api-gateway` :
+Depuis `/Volumes/KARUG/API GATEWAY SECIB NPL/npl-api-gateway` :
 
 ```bash
 git checkout -b feat/documents-save-or-update
@@ -266,21 +310,28 @@ git push -u origin feat/documents-save-or-update
 - [ ] **Step 2: Ouvrir la PR**
 
 ```bash
-gh pr create --title "feat(documents): POST /save-or-update avec EtapeParapheurId" --body "$(cat <<'EOF'
+gh pr create --title "feat(documents): POST /save-or-update avec étape parapheur + destinataire" --body "$(cat <<'EOF'
 ## Summary
 
 - Nouvel endpoint \`POST /api/v1/documents/save-or-update\` en passe-plat vers \`/Document/SaveOrUpdateDocument\` côté SECIB.
-- Accepte un champ \`EtapeParapheurId\` optionnel dans le body, propagé tel quel à SECIB.
-- Tests d'intégration ajoutés : happy path avec/sans étape, body invalide, propagation d'erreur SECIB 422.
+- Accepte les champs optionnels \`EtapeParapheurId\` (GUID) et \`DestinataireId\` (int), propagés tels quels à SECIB.
+- Validation **both-or-neither** côté Gateway : erreur 400 \`etape_destinataire_indissociable\` si un seul des deux est fourni (contrainte SECIB métier, surfacée côté client sans coût d'appel upstream).
+- 6 tests d'intégration : happy paths avec/sans parapheur, validation both-or-neither, body invalide, propagation 422 SECIB.
 
 ## Context
 
-Utilisé par l'extension SECIB-Link (Thunderbird) pour associer un mail enregistré à une étape du parapheur — permet de déléguer le traitement à un collaborateur sans quitter Thunderbird. Voir spec SECIB-Link : \`docs/superpowers/specs/2026-04-19-etapes-parapheur-sidebar-design.md\`.
+Utilisé par l'extension SECIB-Link (Thunderbird) pour associer un mail enregistré à une étape du parapheur **et** à un destinataire — permet de déléguer le traitement à un collaborateur sans quitter Thunderbird.
+
+Phase 0 validation (2026-04-19) a confirmé :
+- \`SaveOrUpdateDocument\` accepte bien les deux champs au top-level du body
+- La contrainte d'indissociabilité est une règle métier SECIB (\`BusinessException_EtapeParapheurDestinataireIndisociable\`)
+
+Voir spec SECIB-Link : \`docs/superpowers/specs/2026-04-19-etapes-parapheur-sidebar-design.md\`.
 
 ## Test plan
 
 - [x] \`npx vitest run\` — toute la suite passe
-- [ ] Test manuel en staging : appel avec EtapeParapheurId valide → doc visible à l'étape dans SECIB Neo
+- [ ] Test manuel en staging : appel avec EtapeParapheurId + DestinataireId valides → doc visible au parapheur du destinataire dans SECIB Neo
 EOF
 )"
 ```
@@ -340,19 +391,20 @@ git add sidebar/secib-api.js
 git commit -m "feat(api): helper gatewayPost pour appels POST via Gateway"
 ```
 
-### Task B2 : Migrer saveDocument + ajouter getEtapesParapheur
+### Task B2 : Migrer saveDocument + ajouter getEtapesParapheur + getIntervenants
 
 **Files:**
-- Modify: `sidebar/secib-api.js` (fonction `saveDocument`, nouvelle fonction `getEtapesParapheur`, export)
+- Modify: `sidebar/secib-api.js` (fonction `saveDocument`, nouvelles `getEtapesParapheur` et `getIntervenants`, export)
 
-- [ ] **Step 1: Remplacer saveDocument pour passer via Gateway**
+- [ ] **Step 1: Remplacer saveDocument pour passer via Gateway avec étape+destinataire**
 
 Dans `sidebar/secib-api.js`, localiser la fonction `saveDocument` (vers ligne 293). Remplacer **entièrement** la fonction par :
 
 ```javascript
   /**
-   * Enregistre un document dans un dossier (et un répertoire si fourni) via la Gateway.
-   * @param {object} doc - { fileName, dossierId, repertoireId?, contentBase64, isAnnexe?, etapeParapheurId? }
+   * Enregistre un document dans un dossier via la Gateway.
+   * @param {object} doc - { fileName, dossierId, repertoireId?, contentBase64, isAnnexe?, etapeParapheurId?, destinataireId? }
+   * Note : etapeParapheurId (GUID) et destinataireId (int) doivent être fournis ensemble ou pas du tout (contrainte SECIB).
    */
   async function saveDocument(doc) {
     const body = {
@@ -362,34 +414,47 @@ Dans `sidebar/secib-api.js`, localiser la fonction `saveDocument` (vers ligne 29
       IsAnnexe: doc.isAnnexe || false
     };
     if (doc.repertoireId) body.RepertoireId = doc.repertoireId;
-    if (doc.etapeParapheurId) body.EtapeParapheurId = doc.etapeParapheurId;
+    if (doc.etapeParapheurId && doc.destinataireId) {
+      body.EtapeParapheurId = doc.etapeParapheurId;
+      body.DestinataireId = doc.destinataireId;
+    }
 
     return gatewayPost("/documents/save-or-update", body);
   }
 ```
 
-- [ ] **Step 2: Ajouter getEtapesParapheur**
+- [ ] **Step 2: Ajouter getEtapesParapheur et getIntervenants**
 
 Dans le même fichier, juste après `saveDocument`, ajouter :
 
 ```javascript
   /**
    * Liste les étapes du parapheur configurées par le cabinet via la Gateway.
-   * Renvoie un tableau d'objets { Id, Libelle, ... } ou [] si cabinet sans étapes.
+   * Renvoie un tableau d'objets { EtapeParapheurId, Libelle } ou [] si cabinet sans étapes.
    */
   async function getEtapesParapheur() {
     const res = await gatewayCall("/referentiel/etapes-parapheur");
     return Array.isArray(res) ? res : [];
   }
+
+  /**
+   * Liste les intervenants (utilisateurs) du cabinet via la Gateway.
+   * Renvoie un tableau d'objets { UtilisateurId, Nom, Prenom, NomComplet, Login, ... }.
+   */
+  async function getIntervenants() {
+    const res = await gatewayCall("/referentiel/intervenants");
+    return Array.isArray(res) ? res : [];
+  }
 ```
 
-- [ ] **Step 3: Exporter getEtapesParapheur**
+- [ ] **Step 3: Exporter les nouvelles fonctions**
 
-Repérer le `return { ... }` final de l'IIFE (vers ligne 305-330). Ajouter `getEtapesParapheur` dans l'objet exporté, à côté de `saveDocument` :
+Repérer le `return { ... }` final de l'IIFE (vers ligne 305-330). Ajouter `getEtapesParapheur` et `getIntervenants` dans l'objet exporté :
 
 ```javascript
     getDocumentContent,
     getEtapesParapheur,
+    getIntervenants,
     saveDocument,
 ```
 
@@ -397,23 +462,24 @@ Repérer le `return { ... }` final de l'IIFE (vers ligne 305-330). Ajouter `getE
 
 Dans Thunderbird : `about:debugging` → Recharger SECIB Link. Ouvrir la sidebar, DevTools, console :
 ```javascript
-await SecibAPI.getEtapesParapheur()
+(await SecibAPI.getEtapesParapheur()).slice(0, 3)
+(await SecibAPI.getIntervenants()).slice(0, 3)
 ```
-Expected : tableau d'étapes `[{ Id, Libelle, ... }]` OU `[]` si cabinet sans étapes OU erreur `GATEWAY_CONFIG_MISSING` si Gateway pas configurée.
+Expected : chacun renvoie un tableau court d'objets SECIB. Sinon erreur `GATEWAY_CONFIG_MISSING` (pas configurée) ou erreur réseau.
 
 - [ ] **Step 5: Commit**
 
 ```bash
 git add sidebar/secib-api.js
-git commit -m "feat(api): saveDocument via Gateway + getEtapesParapheur"
+git commit -m "feat(api): saveDocument via Gateway + getEtapesParapheur + getIntervenants"
 ```
 
-### Task B3 : Ajouter form-group étape parapheur + banner Gateway requise (HTML)
+### Task B3 : Ajouter form-groups étape + destinataire + banner (HTML)
 
 **Files:**
 - Modify: `sidebar/sidebar.html` (modale save)
 
-- [ ] **Step 1: Ajouter le form-group étape parapheur et le banner**
+- [ ] **Step 1: Ajouter les form-groups et le banner**
 
 Ouvrir `sidebar/sidebar.html`. Dans la modale save (`<div id="save-modal">`), localiser la section `<div class="modal-body">` (ligne 102). **Juste après** l'ouverture `<div class="modal-body">`, insérer le banner Gateway requise :
 
@@ -431,7 +497,14 @@ Puis, **entre** le form-group Répertoire (qui se termine ligne ~108) et le form
           <select id="select-etape-parapheur">
             <option value="">Aucune</option>
           </select>
-          <p id="etape-hint" class="field-hint hidden">Appliqué uniquement au mail, pas aux pièces jointes.</p>
+        </div>
+
+        <div id="form-group-destinataire" class="form-group hidden">
+          <label for="select-destinataire">Destinataire (requis si étape)</label>
+          <select id="select-destinataire" disabled>
+            <option value="">— choisir un collaborateur —</option>
+          </select>
+          <p id="destinataire-hint" class="field-hint hidden">Appliqué uniquement au mail, pas aux pièces jointes.</p>
         </div>
 ```
 
@@ -439,16 +512,16 @@ Puis, **entre** le form-group Répertoire (qui se termine ligne ~108) et le form
 
 Recharger l'extension dans Thunderbird. Ouvrir la sidebar, sélectionner un mail et cliquer sur un dossier. Cliquer Enregistrer. Vérifier que :
 - La modale s'ouvre
-- Le form-group étape est présent mais caché (classe `hidden`) — attendu à ce stade, le JS ne le montre pas encore
+- Les deux form-groups sont présents mais cachés (classe `hidden`) — attendu à ce stade, le JS ne les montre pas encore
 
 - [ ] **Step 3: Commit**
 
 ```bash
 git add sidebar/sidebar.html
-git commit -m "feat(sidebar): form-group étape parapheur + banner Gateway"
+git commit -m "feat(sidebar): form-groups étape + destinataire + banner Gateway"
 ```
 
-### Task B4 : Ajouter CSS field-hint et error-banner
+### Task B4 : Ajouter CSS field-hint, error-banner, select
 
 **Files:**
 - Modify: `sidebar/sidebar.css`
@@ -495,6 +568,12 @@ Ouvrir `sidebar/sidebar.css`. À la fin du fichier, ajouter :
   border-color: var(--color-primary);
   box-shadow: 0 0 0 2px var(--color-primary-light);
 }
+
+.form-group select:disabled {
+  background: #f5f5f5;
+  color: #999;
+  cursor: not-allowed;
+}
 ```
 
 - [ ] **Step 2: Commit**
@@ -504,10 +583,10 @@ git add sidebar/sidebar.css
 git commit -m "style(sidebar): classes field-hint, error-banner, select"
 ```
 
-### Task B5 : Charger étapes parapheur + montrer dropdown dans openSaveModal
+### Task B5 : Charger étapes + intervenants en parallèle et peupler les dropdowns
 
 **Files:**
-- Modify: `sidebar/sidebar.js` (fonction `openSaveModal`, ajouter refs DOM + cache étapes)
+- Modify: `sidebar/sidebar.js` (refs DOM + caches + modification `openSaveModal`)
 
 - [ ] **Step 1: Ajouter les refs DOM au début du fichier**
 
@@ -515,37 +594,112 @@ Ouvrir `sidebar/sidebar.js`. Dans le bloc de références DOM (vers ligne 35-50)
 
 ```javascript
   const selectEtapeParapheur = document.getElementById("select-etape-parapheur");
+  const selectDestinataire = document.getElementById("select-destinataire");
   const formGroupEtape = document.getElementById("form-group-etape");
-  const etapeHint = document.getElementById("etape-hint");
+  const formGroupDestinataire = document.getElementById("form-group-destinataire");
+  const destinataireHint = document.getElementById("destinataire-hint");
   const gatewayRequiredBanner = document.getElementById("gateway-required-banner");
 ```
 
-- [ ] **Step 2: Ajouter un cache mémoire étapes au niveau module**
+- [ ] **Step 2: Ajouter les caches mémoire au niveau module**
 
 Juste après le bloc des refs DOM (avant les fonctions), ajouter :
 
 ```javascript
-  // Cache mémoire des étapes parapheur (durée de vie de la fenêtre)
+  // Caches mémoire (durée de vie de la fenêtre)
   let etapesParapheurCache = null;
+  let intervenantsCache = null;
 ```
 
-- [ ] **Step 3: Modifier openSaveModal pour charger étapes en parallèle des répertoires**
+- [ ] **Step 3: Ajouter helper gatewayConfigured au niveau module**
 
-Localiser la fonction `openSaveModal(dossier)` (ligne ~641). Remplacer le bloc `// Charger les répertoires en arrière-plan` jusqu'au `finally` par :
+Juste après les caches, ajouter :
 
 ```javascript
-    // Reset étape parapheur
+  async function gatewayConfigured() {
+    try {
+      const stored = await browser.storage.local.get(["gateway_url", "gateway_api_key"]);
+      return Boolean(stored.gateway_url && stored.gateway_api_key);
+    } catch {
+      return false;
+    }
+  }
+```
+
+- [ ] **Step 4: Modifier openSaveModal pour charger étapes+intervenants en parallèle des répertoires**
+
+Localiser la fonction `openSaveModal(dossier)` (ligne ~641). Remplacer **entièrement** le corps de la fonction par :
+
+```javascript
+  async function openSaveModal(dossier) {
+    if (!currentMessage) {
+      alert("Aucun message sélectionné.");
+      return;
+    }
+    currentDossier = dossier;
+    saveModalTitle.textContent = `Enregistrer dans ${dossier.code}`;
+    saveFeedback.classList.add("hidden");
+
+    // Nom de fichier proposé
+    const safeSubject = (currentMessage.subject || "Mail")
+      .replace(/[\\/:*?"<>|]+/g, "-")
+      .substring(0, 80)
+      .trim();
+    inputFilename.value = `${safeSubject}.eml`;
+
+    // Reset répertoire
+    selectRepertoire.innerHTML = `<option value="">Racine du dossier</option>`;
+    selectRepertoire.disabled = true;
+
+    // Reset étape + destinataire
     selectEtapeParapheur.innerHTML = `<option value="">Aucune</option>`;
     selectEtapeParapheur.disabled = true;
+    selectDestinataire.innerHTML = `<option value="">— choisir un collaborateur —</option>`;
+    selectDestinataire.disabled = true;
     formGroupEtape.classList.add("hidden");
-    etapeHint.classList.add("hidden");
+    formGroupDestinataire.classList.add("hidden");
+    destinataireHint.classList.add("hidden");
 
-    // Charger répertoires + étapes parapheur en parallèle
-    const [repsResult, etapesResult] = await Promise.allSettled([
+    // Reset mode avancé
+    checkAdvanced.checked = false;
+    checkStripAttachments.checked = false;
+    advancedSection.classList.add("hidden");
+    attachmentsTable.classList.add("hidden");
+    attachmentsEmpty.classList.add("hidden");
+    attachmentsLoading.classList.add("hidden");
+    attachmentsTbody.innerHTML = "";
+    attachmentsState = [];
+    advancedLoaded = false;
+    repertoireCache.clear();
+    saveProgress.classList.add("hidden");
+    saveProgressFill.style.width = "0%";
+    saveProgressLabel.textContent = "";
+
+    // Gateway obligatoire : si absente, bandeau + bouton Enregistrer désactivé
+    const gwOk = await gatewayConfigured();
+    if (!gwOk) {
+      gatewayRequiredBanner.classList.remove("hidden");
+      btnModalSave.disabled = true;
+    } else {
+      gatewayRequiredBanner.classList.add("hidden");
+      btnModalSave.disabled = false;
+    }
+
+    saveModal.classList.remove("hidden");
+
+    if (!gwOk) {
+      return; // Rien à charger sans Gateway
+    }
+
+    // Charger répertoires + étapes parapheur + intervenants en parallèle
+    const [repsResult, etapesResult, intervenantsResult] = await Promise.allSettled([
       SecibAPI.getRepertoiresDossier(dossier.dossierId),
       etapesParapheurCache !== null
         ? Promise.resolve(etapesParapheurCache)
         : SecibAPI.getEtapesParapheur(),
+      intervenantsCache !== null
+        ? Promise.resolve(intervenantsCache)
+        : SecibAPI.getIntervenants(),
     ]);
 
     // Répertoires
@@ -566,55 +720,99 @@ Localiser la fonction `openSaveModal(dossier)` (ligne ~641). Remplacer le bloc `
     }
     selectRepertoire.disabled = false;
 
-    // Étapes parapheur
-    if (etapesResult.status === "fulfilled" && Array.isArray(etapesResult.value) && etapesResult.value.length > 0) {
+    // Étapes + intervenants : les deux doivent être OK, sinon on cache les deux form-groups
+    const etapesOk = etapesResult.status === "fulfilled"
+      && Array.isArray(etapesResult.value)
+      && etapesResult.value.length > 0;
+    const intervenantsOk = intervenantsResult.status === "fulfilled"
+      && Array.isArray(intervenantsResult.value)
+      && intervenantsResult.value.length > 0;
+
+    if (etapesOk && intervenantsOk) {
       etapesParapheurCache = etapesResult.value;
+      intervenantsCache = intervenantsResult.value;
+
       for (const e of etapesResult.value) {
         const opt = document.createElement("option");
-        opt.value = e.Id;
-        opt.textContent = e.Libelle || `Étape #${e.Id}`;
+        opt.value = e.EtapeParapheurId;
+        opt.textContent = e.Libelle || `Étape ${e.EtapeParapheurId}`;
         selectEtapeParapheur.appendChild(opt);
       }
+      for (const u of intervenantsResult.value) {
+        const opt = document.createElement("option");
+        opt.value = u.UtilisateurId;
+        opt.textContent = u.NomComplet || `${u.Prenom || ""} ${u.Nom || ""}`.trim() || u.Login || `Utilisateur #${u.UtilisateurId}`;
+        selectDestinataire.appendChild(opt);
+      }
+
       formGroupEtape.classList.remove("hidden");
+      formGroupDestinataire.classList.remove("hidden");
       selectEtapeParapheur.disabled = false;
-    } else if (etapesResult.status === "rejected") {
-      console.warn("[SECIB Link] Erreur chargement étapes parapheur", etapesResult.reason);
+      // selectDestinataire reste disabled tant qu'aucune étape n'est choisie (cf. Task B6)
+    } else {
+      if (etapesResult.status === "rejected") {
+        console.warn("[SECIB Link] Erreur chargement étapes parapheur", etapesResult.reason);
+      }
+      if (intervenantsResult.status === "rejected") {
+        console.warn("[SECIB Link] Erreur chargement intervenants", intervenantsResult.reason);
+      }
     }
   }
 ```
 
-**⚠️** Supprimer l'ancien bloc try/catch/finally sur `getRepertoiresDossier` remplacé ci-dessus. Le dernier `}` correspond à la fermeture de `openSaveModal`.
+- [ ] **Step 5: Smoke test — vérifier l'affichage**
 
-- [ ] **Step 4: Smoke test — vérifier l'affichage**
+Recharger l'extension. Sélectionner un mail, cliquer un dossier, cliquer Enregistrer. Vérifier :
+- Les deux dropdowns (Étape parapheur + Destinataire) sont visibles
+- Étape parapheur contient « Aucune » + les étapes du cabinet
+- Destinataire est **désactivé** (gris) et contient « — choisir un collaborateur — » + la liste des intervenants (désactivé pour l'instant, activation en B6)
 
-Recharger l'extension. Ouvrir la sidebar, sélectionner un mail, cliquer sur un dossier, cliquer Enregistrer. Vérifier :
-- Si cabinet a des étapes configurées → dropdown « Étape parapheur (optionnel) » visible avec « Aucune » + étapes
-- Si cabinet sans étapes → dropdown caché, modale inchangée
-- Si Gateway KO (URL injoignable) → dropdown caché, log console d'erreur
-
-- [ ] **Step 5: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
 git add sidebar/sidebar.js
-git commit -m "feat(sidebar): charger étapes parapheur en parallèle des répertoires"
+git commit -m "feat(sidebar): charger étapes + intervenants en parallèle des répertoires"
 ```
 
-### Task B6 : Lire l'étape au save + afficher hint en mode avancé
+### Task B6 : Couplage étape ⇄ destinataire + validation au save
 
 **Files:**
-- Modify: `sidebar/sidebar.js` (fonction `performSave`, handler `checkAdvanced`)
+- Modify: `sidebar/sidebar.js` (listener sur selectEtapeParapheur, handler checkAdvanced, fonction performSave)
 
-- [ ] **Step 1: Lire l'étape au save**
+- [ ] **Step 1: Ajouter un listener qui couple étape → destinataire**
 
-Dans `performSave` (ligne ~727), juste après la ligne `const repId = selectRepertoire.value ? parseInt(selectRepertoire.value, 10) : null;`, ajouter :
+Dans `sidebar/sidebar.js`, juste après la définition de `openSaveModal` (ou à côté des autres listeners en bas du fichier), ajouter :
 
 ```javascript
-    const etapeId = selectEtapeParapheur.value ? parseInt(selectEtapeParapheur.value, 10) : null;
+  // Quand une étape est choisie, activer le select destinataire. Sinon le désactiver et vider.
+  selectEtapeParapheur.addEventListener("change", () => {
+    if (selectEtapeParapheur.value) {
+      selectDestinataire.disabled = false;
+    } else {
+      selectDestinataire.disabled = true;
+      selectDestinataire.value = "";
+    }
+  });
 ```
 
-- [ ] **Step 2: Propager etapeParapheurId sur l'item "mail" uniquement**
+- [ ] **Step 2: Lire étape + destinataire au save + valider le couplage**
 
-Plus bas, localiser le `uploads.push({ kind: "mail", ... })` (ligne ~744). Ajouter le champ :
+Dans `performSave` (ligne ~727), juste après `const repId = selectRepertoire.value ? parseInt(selectRepertoire.value, 10) : null;`, ajouter :
+
+```javascript
+    const etapeId = selectEtapeParapheur.value || null;
+    const destinataireId = selectDestinataire.value ? parseInt(selectDestinataire.value, 10) : null;
+
+    // Validation client-side : étape sans destinataire → erreur (contrainte SECIB)
+    if (etapeId && !destinataireId) {
+      showSaveFeedback("error", "Choisissez un destinataire pour l'étape parapheur");
+      return;
+    }
+```
+
+- [ ] **Step 3: Propager au push de l'item "mail"**
+
+Plus bas, localiser le `uploads.push({ kind: "mail", ... })` (ligne ~744). Ajouter les champs :
 
 ```javascript
     uploads.push({
@@ -623,13 +821,14 @@ Plus bas, localiser le `uploads.push({ kind: "mail", ... })` (ligne ~744). Ajout
       dossierId: currentDossier.dossierId,
       repertoireId: repId,
       etapeParapheurId: etapeId,
+      destinataireId: destinataireId,
       stripAttachments
     });
 ```
 
-**Ne PAS ajouter etapeParapheurId au push PJ** (ligne ~760) — conforme à la spec : étape sur .eml uniquement.
+**Ne PAS ajouter ces champs au push PJ** (ligne ~760) — conforme à la spec : étape+destinataire sur `.eml` uniquement.
 
-- [ ] **Step 3: Propager au saveDocument**
+- [ ] **Step 4: Propager au saveDocument**
 
 Localiser l'appel `await SecibAPI.saveDocument({...})` dans la boucle `for (const item of uploads)` (ligne ~786). Modifier :
 
@@ -640,101 +839,42 @@ Localiser l'appel `await SecibAPI.saveDocument({...})` dans la boucle `for (cons
           repertoireId: item.repertoireId,
           contentBase64: base64,
           isAnnexe: item.kind === "attachment",
-          etapeParapheurId: item.etapeParapheurId || null
+          etapeParapheurId: item.etapeParapheurId || null,
+          destinataireId: item.destinataireId || null
         });
 ```
 
-Sur les items `attachment`, `item.etapeParapheurId` vaut `undefined` → `null` → champ omis côté `saveDocument` (cf. Task B2 step 1 : `if (doc.etapeParapheurId)` garde de falsy).
+Sur les items `attachment`, ces champs valent `undefined` → `null` → omis côté `saveDocument` (cf. Task B2 step 1 : `if (doc.etapeParapheurId && doc.destinataireId)`).
 
-- [ ] **Step 4: Afficher le hint quand mode avancé est coché**
+- [ ] **Step 5: Afficher le hint quand mode avancé est coché**
 
 Localiser le handler `checkAdvanced.addEventListener("change", ...)` dans le fichier (chercher `checkAdvanced`). Dans le handler, après le toggle de `advancedSection`, ajouter :
 
 ```javascript
-    // Hint étape parapheur : visible uniquement en mode avancé + dropdown étape visible
-    if (checkAdvanced.checked && !formGroupEtape.classList.contains("hidden")) {
-      etapeHint.classList.remove("hidden");
+    // Hint destinataire : visible uniquement en mode avancé + dropdowns étape/destinataire visibles
+    if (checkAdvanced.checked && !formGroupDestinataire.classList.contains("hidden")) {
+      destinataireHint.classList.remove("hidden");
     } else {
-      etapeHint.classList.add("hidden");
+      destinataireHint.classList.add("hidden");
     }
 ```
 
-- [ ] **Step 5: Smoke test**
+- [ ] **Step 6: Smoke test**
 
-Recharger l'extension. Tester trois scénarios :
-1. Enregistrer un mail **sans étape** → comportement identique à avant (doc dans le dossier sans étape)
-2. Enregistrer un mail **avec étape** → vérifier dans SECIB Neo que le doc apparaît à l'étape choisie du parapheur
-3. Cocher mode avancé **avec étape choisie** → hint « Appliqué uniquement au mail… » apparaît sous le select
+Recharger l'extension. Tester quatre scénarios :
+1. Enregistrer mail **sans étape** (étape = Aucune) → comportement identique à avant, ni étape ni destinataire côté SECIB.
+2. Choisir une étape sans destinataire → tenter Enregistrer → bandeau rouge « Choisissez un destinataire… », rien n'est envoyé.
+3. Choisir étape + destinataire → Enregistrer → doc visible au parapheur du destinataire à l'étape choisie dans SECIB Neo.
+4. Cocher mode avancé avec étape/destinataire choisis → hint apparaît sous le select destinataire.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
 git add sidebar/sidebar.js
-git commit -m "feat(sidebar): propager EtapeParapheurId au save du mail"
+git commit -m "feat(sidebar): couplage étape+destinataire et validation au save"
 ```
 
-### Task B7 : Banner Gateway requise + désactivation bouton Enregistrer
-
-**Files:**
-- Modify: `sidebar/sidebar.js` (fonction `openSaveModal`)
-
-- [ ] **Step 1: Ajouter helper gatewayConfigured**
-
-Dans `sidebar/sidebar.js`, juste après le bloc `let etapesParapheurCache = null;` (du Task B5 step 2), ajouter :
-
-```javascript
-  async function gatewayConfigured() {
-    try {
-      const stored = await browser.storage.local.get(["gateway_url", "gateway_api_key"]);
-      return Boolean(stored.gateway_url && stored.gateway_api_key);
-    } catch {
-      return false;
-    }
-  }
-```
-
-- [ ] **Step 2: Vérifier la config au début d'openSaveModal**
-
-Dans `openSaveModal(dossier)`, juste après le bloc de reset de la modale (après la ligne `saveProgressLabel.textContent = "";`, avant `saveModal.classList.remove("hidden");`), ajouter :
-
-```javascript
-    // Gateway obligatoire : si absente, bandeau + bouton Enregistrer désactivé
-    const gwOk = await gatewayConfigured();
-    if (!gwOk) {
-      gatewayRequiredBanner.classList.remove("hidden");
-      btnModalSave.disabled = true;
-    } else {
-      gatewayRequiredBanner.classList.add("hidden");
-      btnModalSave.disabled = false;
-    }
-```
-
-Puis, dans le bloc qui charge répertoires + étapes en parallèle (Task B5), **emballer** le `Promise.allSettled` dans un `if (gwOk)` pour ne pas tenter d'appels inutiles :
-
-```javascript
-    if (!gwOk) {
-      return;  // Rien à charger sans Gateway
-    }
-
-    const [repsResult, etapesResult] = await Promise.allSettled([ ... ]);
-    // ... reste du code chargement
-```
-
-- [ ] **Step 3: Smoke test**
-
-Dans Thunderbird, ouvrir les paramètres SECIB Link et **effacer** l'URL Gateway (laisser vide + enregistrer). Recharger, sélectionner un mail, cliquer un dossier, cliquer Enregistrer. Vérifier :
-- Bandeau rouge « La Gateway NPL-SECIB n'est pas configurée… » affiché
-- Bouton Enregistrer grisé/désactivé
-- Remettre l'URL → modale fonctionne à nouveau
-
-- [ ] **Step 4: Commit**
-
-```bash
-git add sidebar/sidebar.js
-git commit -m "feat(sidebar): banner Gateway requise + save désactivé si absente"
-```
-
-### Task B8 : Mettre à jour README
+### Task B7 : Mettre à jour README
 
 **Files:**
 - Modify: `README.md`
@@ -744,26 +884,29 @@ git commit -m "feat(sidebar): banner Gateway requise + save désactivé si absen
 Ouvrir `README.md`. Dans la section `## Fonctionnalités` (ligne 5), ajouter un bullet après `- **Mode avancé pièces jointes**` :
 
 ```markdown
-- **Étape parapheur** : possibilité d'associer le mail enregistré à une étape du parapheur SECIB (visible par le collaborateur concerné dans son parapheur Neo)
+- **Étape parapheur + destinataire** : possibilité d'associer le mail enregistré à une étape du parapheur SECIB et à un destinataire collaborateur (le mail apparaît dans le parapheur du destinataire à l'étape choisie)
 ```
 
-Dans la section `## API SECIB utilisées` (ligne 57), ajouter :
+Dans la section `## API SECIB utilisées` (ligne 57), remplacer les lignes actuelles par :
 
 ```markdown
-- `GET /Document/ListeEtapeParapheur` — étapes de parapheur du cabinet (via Gateway NPL-SECIB)
-- `POST /Document/SaveOrUpdateDocument` — enregistrement d'un document avec `EtapeParapheurId` optionnel (via Gateway `POST /api/v1/documents/save-or-update`)
+- `POST /Personne/Get` — recherche tiers (Coordonnees / Denomination)
+- `GET /Partie/GetByPersonneId` — dossiers d'une personne
+- `POST /Dossier/GetDossiers` — recherche libre de dossiers (Code / Nom)
+- `GET /Document/GetListRepertoireDossier` — répertoires d'un dossier
+- `GET /Document/ListeEtapeParapheur` — étapes de parapheur du cabinet (via Gateway NPL-SECIB, cache 24h)
+- `GET /Utilisateur/ListIntervenant` — intervenants du cabinet (via Gateway NPL-SECIB, cache 24h)
+- `POST /Document/SaveOrUpdateDocument` — enregistrement d'un document avec `EtapeParapheurId` + `DestinataireId` optionnels (via Gateway `POST /api/v1/documents/save-or-update`)
 ```
-
-Supprimer l'ancienne ligne `- POST /Document/SaveOrUpdateDocument — enregistrement d'un fichier dans un dossier+répertoire` devenue obsolète.
 
 - [ ] **Step 2: Commit**
 
 ```bash
 git add README.md
-git commit -m "docs(readme): feature étape parapheur + migration Gateway save"
+git commit -m "docs(readme): feature étape parapheur + destinataire et migration Gateway save"
 ```
 
-### Task B9 : Bumper la version
+### Task B8 : Bumper la version
 
 **Files:**
 - Modify: `manifest.json`
@@ -788,44 +931,48 @@ git add manifest.json updates.json
 git commit -m "chore(release): bump 1.2.0 → 1.3.0"
 ```
 
-### Task B10 : Smoke tests manuels finaux
+### Task B9 : Smoke tests manuels finaux
 
 **But :** parcourir la checklist de tests de la spec avant d'ouvrir la PR.
 
 - [ ] **Step 1: Test — mail sans étape**
 
-Recharger l'extension. Sélectionner un mail, cliquer sur un dossier, cliquer Enregistrer, **ne pas choisir d'étape**, cliquer Enregistrer.
-Expected : doc `.eml` dans le dossier SECIB, aucune étape parapheur associée. Tag « Enregistré SECIB » posé.
+Recharger l'extension. Sélectionner un mail, cliquer sur un dossier, cliquer Enregistrer, laisser étape = « Aucune », cliquer Enregistrer.
+Expected : doc `.eml` dans le dossier SECIB, aucun parapheur associé. Tag « Enregistré SECIB » posé.
 
-- [ ] **Step 2: Test — mail avec étape**
+- [ ] **Step 2: Test — mail avec étape + destinataire**
 
-Même flux, choisir une étape parapheur. Expected : doc dans le dossier + visible dans le parapheur SECIB Neo à l'étape choisie.
+Même flux, choisir étape + destinataire. Expected : doc dans le dossier + visible dans le parapheur du destinataire à l'étape choisie dans SECIB Neo.
 
-- [ ] **Step 3: Test — Gateway non configurée**
+- [ ] **Step 3: Test — étape sans destinataire (validation client-side)**
 
-Paramètres → effacer URL Gateway → enregistrer. Tenter d'enregistrer un mail. Expected : bandeau rouge, bouton désactivé.
+Choisir étape, ne pas choisir destinataire, cliquer Enregistrer. Expected : bandeau rouge « Choisissez un destinataire pour l'étape parapheur », aucun appel Gateway (vérifier dans l'onglet Network/console).
 
-- [ ] **Step 4: Test — cabinet sans étapes**
+- [ ] **Step 4: Test — étape remise à « Aucune »**
+
+Choisir étape → destinataire s'active → choisir destinataire → remettre étape à « Aucune ». Expected : destinataire se remet à « — choisir un collaborateur — » et se désactive automatiquement.
+
+- [ ] **Step 5: Test — Gateway non configurée**
+
+Paramètres → effacer URL Gateway → enregistrer. Tenter d'enregistrer un mail. Expected : bandeau rouge, bouton désactivé, dropdowns cachés.
+
+- [ ] **Step 6: Test — cabinet sans étapes**
 
 Difficile à reproduire sans backend de test : simuler en intercept JS console :
 ```javascript
 SecibAPI.getEtapesParapheur = async () => [];
 ```
-Puis rouvrir la modale. Expected : dropdown étape caché, save fonctionne.
+Puis rouvrir la modale. Expected : les deux dropdowns (étape + destinataire) cachés, save fonctionne sans parapheur.
 
-- [ ] **Step 5: Test — mode avancé PJ avec étape**
+- [ ] **Step 7: Test — mode avancé PJ avec étape+destinataire**
 
-Choisir une étape, cocher mode avancé, router une PJ vers un autre dossier, enregistrer. Expected : `.eml` à l'étape choisie, PJ enregistrée sans étape dans son dossier.
+Choisir étape + destinataire, cocher mode avancé, router une PJ vers un autre dossier, enregistrer. Expected : `.eml` au parapheur du destinataire à l'étape choisie, PJ enregistrée sans parapheur dans son dossier.
 
-- [ ] **Step 6: Test — re-enregistrement**
+- [ ] **Step 8: Test — re-enregistrement**
 
 Sur un mail déjà enregistré, vérifier que le bandeau « Mail déjà enregistré » apparaît (inchangé).
 
-- [ ] **Step 7: Test — étape invalide entre chargement et save**
-
-Difficile à reproduire sans coup de main côté SECIB. Considéré couvert par le test intégration Gateway (Task A1 step 1, test 422).
-
-### Task B11 : Push + PR SECIB-Link
+### Task B10 : Push + PR SECIB-Link
 
 - [ ] **Step 1: Push**
 
@@ -833,31 +980,36 @@ Difficile à reproduire sans coup de main côté SECIB. Considéré couvert par 
 git push origin claude/interesting-shtern-f0877f
 ```
 
-- [ ] **Step 2: Ouvrir/mettre à jour la PR**
+- [ ] **Step 2: Mettre à jour la PR existante**
 
-Si la PR [#2](https://github.com/Karugency97/secib-link/pull/2) existe déjà (elle contient la spec), les commits seront ajoutés automatiquement. Sinon, créer la PR avec `gh pr create`.
+La PR [#2](https://github.com/Karugency97/secib-link/pull/2) existe déjà (elle contient la spec + plan). Les nouveaux commits seront ajoutés automatiquement au push.
 
-Mettre à jour la description de la PR pour refléter que l'implémentation est là (au-delà de la spec). Marquer les cases « Test plan » de la PR selon les résultats de Task B10.
+Mettre à jour la description de la PR pour refléter que l'implémentation est là (au-delà de la spec/plan). Marquer les cases « Test plan » selon les résultats de Task B9.
 
 ---
 
 ## Self-review checklist
 
 **Spec coverage :**
-- ✅ Dropdown étape parapheur optionnel dans modale save → Tasks B3, B5
-- ✅ Gateway obligatoire pour save → Task B7
-- ✅ Étape sur `.eml` uniquement, pas PJ → Task B6 step 2-3
-- ✅ Cache mémoire étapes côté sidebar → Task B5 step 2-3
+- ✅ Dropdown étape parapheur + dropdown destinataire → Tasks B3, B5
+- ✅ Couplage étape ⇄ destinataire (activation conditionnelle) → Task B6 step 1
+- ✅ Validation client-side étape sans destinataire → Task B6 step 2
+- ✅ Gateway obligatoire pour save → Task B5 step 4 (gatewayConfigured + banner)
+- ✅ Étape+destinataire sur `.eml` uniquement, pas PJ → Task B6 steps 3-4
+- ✅ Caches mémoire étapes + intervenants → Task B5 steps 2 et 4
 - ✅ Endpoint Gateway POST /documents/save-or-update → Task A2
-- ✅ Tests Gateway (happy path + 400 + 422) → Task A1
-- ✅ Bump version 1.2.0 → 1.3.0 → Task B9
-- ✅ README + INTEGRATION_GUIDE maj → Tasks B8, A3
-- ✅ Hint mode avancé → Task B6 step 4
-- ✅ Reset à "Aucune" à chaque ouverture → Task B5 step 3
+- ✅ Validation both-or-neither côté Gateway → Task A2 step 1
+- ✅ Tests Gateway (happy paths, both-or-neither, 400, 422) → Task A1
+- ✅ Bump version 1.2.0 → 1.3.0 → Task B8
+- ✅ README + INTEGRATION_GUIDE maj → Tasks B7, A3
+- ✅ Hint mode avancé → Task B6 step 5
+- ✅ Reset à "Aucune" à chaque ouverture → Task B5 step 4
 
 **Placeholders :** aucun TODO/TBD/« à adapter ». Tout le code est fourni.
 
 **Type consistency :**
-- `etapeParapheurId` (camelCase côté sidebar) → mappé vers `EtapeParapheurId` (PascalCase côté SECIB) dans `saveDocument` (Task B2 step 1). Gateway propage le body sans le renommer (passe-plat). OK.
-- `selectEtapeParapheur`, `formGroupEtape`, `etapeHint`, `gatewayRequiredBanner` : mêmes noms dans Tasks B3 (HTML id), B5 (JS ref), B6-B7 (usage). OK.
-- `etapesParapheurCache` cohérent entre B5 step 2 (declaration) et B5 step 3 (usage).
+- `etapeParapheurId` (camelCase, **GUID string** côté sidebar) → `EtapeParapheurId` côté SECIB (Task B2 step 1). Gateway propage sans renommer.
+- `destinataireId` (camelCase, **int** côté sidebar) → `DestinataireId` côté SECIB.
+- Convention both-or-neither : `if (doc.etapeParapheurId && doc.destinataireId)` dans `saveDocument` (B2) correspond à la validation Gateway (`hasEtape !== hasDest` en A2) — si un seul falsy, les deux sont omis/rejetés.
+- `selectEtapeParapheur`, `selectDestinataire`, `formGroupEtape`, `formGroupDestinataire`, `destinataireHint`, `gatewayRequiredBanner` : mêmes noms dans Tasks B3 (HTML id), B5 (JS ref), B6 (usage).
+- `etapesParapheurCache`, `intervenantsCache` cohérents entre B5 step 2 et step 4.
