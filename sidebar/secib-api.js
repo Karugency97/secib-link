@@ -232,14 +232,14 @@ const SecibAPI = (() => {
     return rechercherPersonne({ denomination }, limit);
   }
 
-  /** Détail personne physique */
+  /** Détail personne physique via Gateway */
   async function getPersonnePhysique(personneId) {
-    return apiCall("GET", "/Personne/GetPersonnePhysique", { query: { personneId } });
+    return gatewayCall(`/personnes/${encodeURIComponent(personneId)}`, { type: "PP" });
   }
 
-  /** Détail personne morale */
+  /** Détail personne morale via Gateway */
   async function getPersonneMorale(personneId) {
-    return apiCall("GET", "/Personne/GetPersonneMorale", { query: { personneId } });
+    return gatewayCall(`/personnes/${encodeURIComponent(personneId)}`, { type: "PM" });
   }
 
   /** Liste les dossiers où une personne est partie (GET /Partie/GetByPersonneId) */
