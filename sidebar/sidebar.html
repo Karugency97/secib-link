@@ -100,11 +100,28 @@
         <button type="button" id="btn-modal-close" class="btn-icon">&times;</button>
       </div>
       <div class="modal-body">
+        <div id="gateway-required-banner" class="error-banner hidden">
+          La Gateway NPL-SECIB n'est pas configurée. Ouvrez les paramètres (⚙️) pour la configurer avant d'enregistrer un mail.
+        </div>
         <div class="form-group">
           <label for="select-repertoire">Répertoire</label>
           <select id="select-repertoire">
             <option value="">Racine du dossier</option>
           </select>
+        </div>
+        <div id="form-group-etape" class="form-group hidden">
+          <label for="select-etape-parapheur">Étape parapheur (optionnel)</label>
+          <select id="select-etape-parapheur">
+            <option value="">Aucune</option>
+          </select>
+        </div>
+
+        <div id="form-group-destinataire" class="form-group hidden">
+          <label for="select-destinataire">Destinataire (requis si étape)</label>
+          <select id="select-destinataire" disabled>
+            <option value="">— choisir un collaborateur —</option>
+          </select>
+          <p id="destinataire-hint" class="field-hint hidden">Appliqué uniquement au mail, pas aux pièces jointes.</p>
         </div>
         <div class="form-group">
           <label for="input-filename">Nom du fichier</label>
