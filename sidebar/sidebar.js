@@ -12,10 +12,6 @@
   const btnSettings = document.getElementById("btn-settings");
   const btnSave = document.getElementById("btn-save-settings");
   const btnCancel = document.getElementById("btn-cancel-settings");
-  const inputBaseUrl = document.getElementById("input-base-url");
-  const inputCabinetId = document.getElementById("input-cabinet-id");
-  const inputClientId = document.getElementById("input-client-id");
-  const inputClientSecret = document.getElementById("input-client-secret");
   const inputGatewayUrl = document.getElementById("input-gateway-url");
   const inputGatewayApiKey = document.getElementById("input-gateway-api-key");
   const settingsFeedback = document.getElementById("settings-feedback");
@@ -129,20 +125,13 @@
     settingsFeedback.classList.add("hidden");
     try {
       const stored = await browser.storage.local.get([
-        "secib_base_url", "secib_cabinet_id", "secib_client_id", "secib_client_secret",
         "gateway_url", "gateway_api_key"
       ]);
-      inputBaseUrl.value = stored.secib_base_url || "https://secibneo.secib.fr/8.2.1";
-      inputCabinetId.value = stored.secib_cabinet_id || "";
-      inputClientId.value = stored.secib_client_id || "";
-      inputClientSecret.value = stored.secib_client_secret || "";
       inputGatewayUrl.value = stored.gateway_url || "https://apisecib.nplavocat.com";
       inputGatewayApiKey.value = stored.gateway_api_key || "";
       console.log("[SECIB Link] Settings chargés :", {
-        url: stored.secib_base_url,
-        cabinetId: stored.secib_cabinet_id ? "(défini)" : "(vide)",
-        clientId: stored.secib_client_id ? "(défini)" : "(vide)",
-        secret: stored.secib_client_secret ? "(défini)" : "(vide)"
+        gatewayUrl: stored.gateway_url ? "(défini)" : "(vide)",
+        gatewayApiKey: stored.gateway_api_key ? "(défini)" : "(vide)"
       });
     } catch (e) {
       console.error("[SECIB Link] Erreur chargement settings :", e);
@@ -170,7 +159,7 @@
 
   // Auto-sauvegarde au changement de chaque champ (filet de sécurité
   // si le popup se ferme avant un clic sur Enregistrer)
-  for (const input of [inputBaseUrl, inputCabinetId, inputClientId, inputClientSecret, inputGatewayUrl, inputGatewayApiKey]) {
+  for (const input of [inputGatewayUrl, inputGatewayApiKey]) {
     input.addEventListener("change", () => saveSettings(false));
     input.addEventListener("blur", () => saveSettings(false));
   }
@@ -180,37 +169,35 @@
    * @param {boolean} verbose - Si true, affiche le feedback à l'utilisateur.
    */
   async function saveSettings(verbose) {
+    const gatewayUrl = inputGatewayUrl.value.trim().replace(/\/+$/, "");
+    const gatewayApiKey = inputGatewayApiKey.value.trim();
+
+    if (verbose && (!gatewayUrl || !gatewayApiKey)) {
+      showFeedback("error", "L'URL Gateway et l'API Key sont obligatoires");
+      return;
+    }
+
     const payload = {
-      secib_base_url: inputBaseUrl.value.trim(),
-      secib_cabinet_id: inputCabinetId.value.trim(),
-      secib_client_id: inputClientId.value.trim(),
-      secib_client_secret: inputClientSecret.value.trim(),
-      gateway_url: inputGatewayUrl.value.trim().replace(/\/+$/, ""),
-      gateway_api_key: inputGatewayApiKey.value.trim()
+      gateway_url: gatewayUrl,
+      gateway_api_key: gatewayApiKey
     };
 
     try {
       await browser.storage.local.set(payload);
       console.log("[SECIB Link] Paramètres sauvegardés :", {
-        url: payload.secib_base_url,
-        cabinetId: payload.secib_cabinet_id ? "(défini)" : "(vide)",
-        clientId: payload.secib_client_id ? "(défini)" : "(vide)",
-        secret: payload.secib_client_secret ? "(défini)" : "(vide)"
+        gatewayUrl: payload.gateway_url ? "(défini)" : "(vide)",
+        gatewayApiKey: payload.gateway_api_key ? "(défini)" : "(vide)"
       });
 
-      // Vérification immédiate par relecture
-      const check = await browser.storage.local.get([
-        "secib_base_url", "secib_cabinet_id", "secib_client_id", "secib_client_secret"
-      ]);
-
       if (verbose) {
-        if (check.secib_base_url && check.secib_cabinet_id &&
-            check.secib_client_id && check.secib_client_secret) {
+        // Vérification immédiate par relecture
+        const check = await browser.storage.local.get(["gateway_url", "gateway_api_key"]);
+        if (check.gateway_url && check.gateway_api_key) {
           showFeedback("success", "✓ Paramètres enregistrés avec succès");
           showError(null);
           setTimeout(() => init(), 800);
         } else {
-          showFeedback("error", "Tous les champs sont obligatoires");
+          showFeedback("error", "L'URL Gateway et l'API Key sont obligatoires");
         }
       }
     } catch (e) {
