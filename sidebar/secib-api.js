@@ -242,9 +242,9 @@ const SecibAPI = (() => {
     return gatewayCall(`/personnes/${encodeURIComponent(personneId)}`, { type: "PM" });
   }
 
-  /** Liste les dossiers où une personne est partie (GET /Partie/GetByPersonneId) */
+  /** Liste les dossiers où une personne est partie (via Gateway) */
   async function getDossiersPersonne(personneId) {
-    return apiCall("GET", "/Partie/GetByPersonneId", { query: { personneId } });
+    return gatewayCall(`/personnes/${encodeURIComponent(personneId)}/dossiers`);
   }
 
   /** Détail d'un dossier */
