@@ -315,9 +315,9 @@ const SecibAPI = (() => {
   }
 
   /**
-   * Enregistre un document dans un dossier (et un répertoire si fourni).
-   * @param {object} doc - { fileName, dossierId, repertoireId?, contentBase64, isAnnexe? }
-   * Note : on utilise SaveOrUpdateDocument car SaveDocument ignore RepertoireId.
+   * Enregistre un document dans un dossier (et un répertoire si fourni) via la Gateway.
+   * @param {object} doc - { fileName, dossierId, repertoireId?, contentBase64, isAnnexe?, etapeParapheurId?, destinataireId? }
+   * Note : etapeParapheurId (GUID) et destinataireId (int) doivent être fournis ensemble ou pas du tout (contrainte SECIB).
    */
   async function saveDocument(doc) {
     const body = {
@@ -327,8 +327,30 @@ const SecibAPI = (() => {
       IsAnnexe: doc.isAnnexe || false
     };
     if (doc.repertoireId) body.RepertoireId = doc.repertoireId;
+    if (doc.etapeParapheurId && doc.destinataireId) {
+      body.EtapeParapheurId = doc.etapeParapheurId;
+      body.DestinataireId = doc.destinataireId;
+    }
 
-    return apiCall("POST", "/Document/SaveOrUpdateDocument", { body });
+    return gatewayPost("/documents/save-or-update", body);
+  }
+
+  /**
+   * Liste les étapes du parapheur configurées par le cabinet via la Gateway.
+   * Renvoie un tableau d'objets { EtapeParapheurId, Libelle } ou [] si cabinet sans étapes.
+   */
+  async function getEtapesParapheur() {
+    const res = await gatewayCall("/referentiel/etapes-parapheur");
+    return Array.isArray(res) ? res : [];
+  }
+
+  /**
+   * Liste les intervenants (utilisateurs) du cabinet via la Gateway.
+   * Renvoie un tableau d'objets { UtilisateurId, Nom, Prenom, NomComplet, Login, ... }.
+   */
+  async function getIntervenants() {
+    const res = await gatewayCall("/referentiel/intervenants");
+    return Array.isArray(res) ? res : [];
   }
 
   return {
@@ -345,6 +367,8 @@ const SecibAPI = (() => {
     getPartiesDossier,
     getDocumentsDossier,
     getDocumentContent,
+    getEtapesParapheur,
+    getIntervenants,
     rechercherDossiers,
     saveDocument
   };
