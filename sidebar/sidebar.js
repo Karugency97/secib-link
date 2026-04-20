@@ -652,6 +652,22 @@
     } else {
       advancedSection.classList.add("hidden");
     }
+    // Hint destinataire : visible uniquement en mode avancé + dropdowns étape/destinataire visibles
+    if (checkAdvanced.checked && !formGroupDestinataire.classList.contains("hidden")) {
+      destinataireHint.classList.remove("hidden");
+    } else {
+      destinataireHint.classList.add("hidden");
+    }
+  });
+
+  // Quand une étape est choisie, activer le select destinataire. Sinon le désactiver et vider.
+  selectEtapeParapheur.addEventListener("change", () => {
+    if (selectEtapeParapheur.value) {
+      selectDestinataire.disabled = false;
+    } else {
+      selectDestinataire.disabled = true;
+      selectDestinataire.value = "";
+    }
   });
 
   /**
@@ -819,6 +835,14 @@
     }
 
     const repId = selectRepertoire.value ? parseInt(selectRepertoire.value, 10) : null;
+    const etapeId = selectEtapeParapheur.value || null;
+    const destinataireId = selectDestinataire.value ? parseInt(selectDestinataire.value, 10) : null;
+
+    // Validation client-side : étape sans destinataire → erreur (contrainte SECIB)
+    if (etapeId && !destinataireId) {
+      showSaveFeedback("error", "Choisissez un destinataire pour l'étape parapheur");
+      return;
+    }
     const isAdvanced = checkAdvanced.checked;
     const stripAttachments = isAdvanced && checkStripAttachments.checked;
 
@@ -831,6 +855,8 @@
       fileName,
       dossierId: currentDossier.dossierId,
       repertoireId: repId,
+      etapeParapheurId: etapeId,
+      destinataireId: destinataireId,
       stripAttachments
     });
 
@@ -873,7 +899,9 @@
           dossierId: item.dossierId,
           repertoireId: item.repertoireId,
           contentBase64: base64,
-          isAnnexe: item.kind === "attachment"
+          isAnnexe: item.kind === "attachment",
+          etapeParapheurId: item.etapeParapheurId || null,
+          destinataireId: item.destinataireId || null
         });
         done++;
         updateProgress(done, uploads.length, label);
