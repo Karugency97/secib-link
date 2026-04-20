@@ -9,6 +9,7 @@ Extension Thunderbird (MailExtension) pour le cabinet NPL — relie les mails re
 - **Recherche manuelle** d'un dossier par code ou nom
 - **Enregistrement du mail** (.eml) dans le dossier + répertoire choisis
 - **Mode avancé pièces jointes** : routage individuel des PJ vers d'autres dossiers/répertoires, avec autocomplete
+- **Étape parapheur + destinataire** : possibilité d'associer le mail enregistré à une étape du parapheur SECIB et à un destinataire collaborateur (le mail apparaît dans le parapheur du destinataire à l'étape choisie)
 - **.eml allégé** : option pour enregistrer le mail sans les PJ (utile quand on uploade les PJ séparément)
 - **Tag "Enregistré SECIB"** posé sur le mail pour éviter les doublons
 - **Fenêtre flottante persistante** : reste ouverte à côté de Thunderbird, se met à jour automatiquement quand on change de mail
@@ -60,7 +61,9 @@ SECIB-Link/
 - `GET /Partie/GetByPersonneId` — dossiers d'une personne
 - `POST /Dossier/GetDossiers` — recherche libre de dossiers (Code / Nom)
 - `GET /Document/GetListRepertoireDossier` — répertoires d'un dossier
-- `POST /Document/SaveOrUpdateDocument` — enregistrement d'un fichier dans un dossier+répertoire
+- `GET /Document/ListeEtapeParapheur` — étapes de parapheur du cabinet (via Gateway NPL-SECIB, cache 24h)
+- `GET /Utilisateur/ListIntervenant` — intervenants du cabinet (via Gateway NPL-SECIB, cache 24h)
+- `POST /Document/SaveOrUpdateDocument` — enregistrement d'un document avec `EtapeParapheurId` + `DestinataireId` optionnels (via Gateway `POST /api/v1/documents/save-or-update`)
 
 Authentification OAuth2 client_credentials sur `https://api.secib.fr/forward/{cabinetId}/ApiToken`.
 
