@@ -20,10 +20,11 @@ Extension Thunderbird (MailExtension) pour le cabinet NPL — relie les mails re
 2. Dans Thunderbird : **Outils → Modules complémentaires et thèmes**
 3. Engrenage ⚙️ en haut à droite → **"Installer un module depuis un fichier"**
 4. Choisir le `.xpi` téléchargé
-5. Configurer l'API : ouvrir SECIB Link, cliquer sur l'icône engrenage, renseigner :
-   - URL API (ex. `https://secibneo.secib.fr/8.2.1`)
-   - Cabinet ID (GUID)
-   - Client ID + Client Secret OAuth2
+5. Configurer la Gateway : ouvrir SECIB Link, cliquer sur l'icône engrenage, renseigner :
+   - URL Gateway (ex. `https://apisecib.nplavocat.com`)
+   - API Key (fournie par l'administrateur)
+
+L'extension n'a plus besoin de credentials SECIB directs — la Gateway NPL-SECIB sert de pont vers SECIB Neo.
 
 ## Installation (développeur)
 
@@ -55,22 +56,25 @@ SECIB-Link/
     └── sidebar.js         # Orchestration UI + logique métier
 ```
 
-## API SECIB utilisées
+## API SECIB utilisées (toutes via la Gateway NPL-SECIB)
 
-- `POST /Personne/Get` — recherche tiers (Coordonnees / Denomination)
+- `POST /Personne/Get` — recherche tiers (filtres `Coordonnees` / `Denomination` / `RechercheGenerique`)
+- `GET /Personne/GetPersonnePhysique` / `GetPersonneMorale` — détail personne
 - `GET /Partie/GetByPersonneId` — dossiers d'une personne
-- `POST /Dossier/GetDossiers` — recherche libre de dossiers (Code / Nom)
+- `POST /Dossier/GetDossiers` — recherche dossiers (Code / Nom exacts)
+- `POST /Dossier/Get` — recherche libre (RechercheGenerique)
+- `GET /Dossier/GetDossierById` — détail dossier
 - `GET /Document/GetListRepertoireDossier` — répertoires d'un dossier
-- `GET /Document/ListeEtapeParapheur` — étapes de parapheur du cabinet (via Gateway NPL-SECIB, cache 24h)
-- `GET /Utilisateur/ListIntervenant` — intervenants du cabinet (via Gateway NPL-SECIB, cache 24h)
-- `POST /Document/SaveOrUpdateDocument` — enregistrement d'un document avec `EtapeParapheurId` + `DestinataireId` optionnels (via Gateway `POST /api/v1/documents/save-or-update`)
+- `GET /Document/ListeEtapeParapheur` — étapes de parapheur (cache 24h)
+- `GET /Utilisateur/ListIntervenant` — intervenants du cabinet (cache 24h)
+- `POST /Document/SaveOrUpdateDocument` — enregistrement d'un document (avec `EtapeParapheurId` + `DestinataireId` optionnels)
 
-Authentification OAuth2 client_credentials sur `https://api.secib.fr/forward/{cabinetId}/ApiToken`.
+Authentification : `X-API-Key` sur toutes les requêtes. La Gateway gère l'OAuth2 SECIB côté serveur.
 
 ## Permissions requises
 
 - `messagesRead`, `messagesUpdate`, `messagesTags`, `accountsRead`, `storage`
-- `https://secibneo.secib.fr/*`, `https://api.secib.fr/*`
+- `https://apisecib.nplavocat.com/*` (Gateway NPL-SECIB)
 
 ## Licence
 
