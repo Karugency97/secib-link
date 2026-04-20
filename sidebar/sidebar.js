@@ -341,12 +341,12 @@
     results.innerHTML = "";
 
     try {
-      // Vérifier la config
-      await SecibAPI.getConfig();
+      // Vérifier la config Gateway (obligatoire v2.0.0+)
+      await SecibAPI.getGatewayConfig();
     } catch (e) {
       showLoader(false);
       renderSenderPlaceholder();
-      showError("Configuration manquante. Cliquez sur l'engrenage pour configurer l'accès API SECIB.");
+      showError("Gateway NPL-SECIB non configurée. Cliquez sur l'engrenage pour configurer l'URL et l'API Key.");
       return;
     }
 
