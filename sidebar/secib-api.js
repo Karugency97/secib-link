@@ -209,23 +209,17 @@ const SecibAPI = (() => {
   // ─── Méthodes publiques ──────────────────────────────────────────
 
   /**
-   * Recherche de personnes via POST /Personne/Get
-   * Body : FiltrePersonneApiDto { Denomination, Coordonnees, FiltreType, ... }
+   * Recherche de personnes via la Gateway (filtre selon criteres).
    * @param {object} criteres - { denomination?, coordonnees?, type? }
    * @param {number} limit
-   * @param {number} offset
+   * @param {number} offset - ignoré (Gateway ne gère pas offset)
    */
   async function rechercherPersonne(criteres, limit = 20, offset = 0) {
-    const body = {};
-    if (criteres.denomination) body.Denomination = criteres.denomination;
-    if (criteres.coordonnees) body.Coordonnees = criteres.coordonnees;
-    if (criteres.type) body.FiltreType = criteres.type;
-
-    const range = `${offset}-${offset + limit - 1}`;
-    return apiCall("POST", "/Personne/Get", {
-      body,
-      query: { range }
-    });
+    const query = { limit: String(limit) };
+    if (criteres.coordonnees) query.coordonnees = criteres.coordonnees;
+    else if (criteres.denomination) query.denomination = criteres.denomination;
+    if (criteres.type) query.type = criteres.type;
+    return gatewayCall("/personnes", query);
   }
 
   /** Raccourci : recherche par email/téléphone via le filtre Coordonnees */
