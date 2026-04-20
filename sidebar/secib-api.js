@@ -247,9 +247,9 @@ const SecibAPI = (() => {
     return gatewayCall(`/personnes/${encodeURIComponent(personneId)}/dossiers`);
   }
 
-  /** Détail d'un dossier */
+  /** Détail d'un dossier via Gateway */
   async function getDossierDetail(dossierId) {
-    return apiCall("GET", "/Dossier/GetDossierById", { query: { dossierId } });
+    return gatewayCall(`/dossiers/${Number(dossierId)}`);
   }
 
   /**
@@ -291,21 +291,20 @@ const SecibAPI = (() => {
   }
 
   /**
-   * Recherche libre de dossiers via POST /Dossier/GetDossiers (filtre Nom OU Code).
-   * Si le terme est numérique on tente Code exact, sinon recherche par Nom.
+   * Recherche libre de dossiers via la Gateway (filtre Code ou Nom).
+   * Si le terme ressemble à un code (majuscules/chiffres/ponctuation), on privilégie Code ; sinon Nom.
    * Renvoie DossierDetailApiDto[].
    */
   async function rechercherDossiers(terme, limit = 15) {
-    const body = {};
     const t = (terme || "").trim();
     if (!t) return [];
+    const query = { limit: String(limit) };
     if (/^[A-Z0-9._\-/]+$/i.test(t) && /\d/.test(t)) {
-      body.Code = t;
+      query.code = t;
     } else {
-      body.Nom = t;
+      query.nom = t;
     }
-    const range = `0-${limit - 1}`;
-    return apiCall("POST", "/Dossier/GetDossiers", { body, query: { range } });
+    return gatewayCall("/dossiers", query);
   }
 
   /**
