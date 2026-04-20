@@ -36,6 +36,12 @@
   const saveModal = document.getElementById("save-modal");
   const saveModalTitle = document.getElementById("save-modal-title");
   const selectRepertoire = document.getElementById("select-repertoire");
+  const selectEtapeParapheur = document.getElementById("select-etape-parapheur");
+  const selectDestinataire = document.getElementById("select-destinataire");
+  const formGroupEtape = document.getElementById("form-group-etape");
+  const formGroupDestinataire = document.getElementById("form-group-destinataire");
+  const destinataireHint = document.getElementById("destinataire-hint");
+  const gatewayRequiredBanner = document.getElementById("gateway-required-banner");
   const inputFilename = document.getElementById("input-filename");
   const saveFeedback = document.getElementById("save-feedback");
   const btnModalClose = document.getElementById("btn-modal-close");
@@ -51,6 +57,19 @@
   const saveProgress = document.getElementById("save-progress");
   const saveProgressFill = document.getElementById("save-progress-fill");
   const saveProgressLabel = document.getElementById("save-progress-label");
+
+  // Caches mémoire (durée de vie de la fenêtre)
+  let etapesParapheurCache = null;
+  let intervenantsCache = null;
+
+  async function gatewayConfigured() {
+    try {
+      const stored = await browser.storage.local.get(["gateway_url", "gateway_api_key"]);
+      return Boolean(stored.gateway_url && stored.gateway_api_key);
+    } catch {
+      return false;
+    }
+  }
 
   // Contexte du mail courant
   let currentMessage = null; // { id, subject, author, date }
@@ -647,18 +666,27 @@
     saveModalTitle.textContent = `Enregistrer dans ${dossier.code}`;
     saveFeedback.classList.add("hidden");
 
-    // Nom de fichier proposé : sujet du mail + .eml
+    // Nom de fichier proposé
     const safeSubject = (currentMessage.subject || "Mail")
       .replace(/[\\/:*?"<>|]+/g, "-")
       .substring(0, 80)
       .trim();
     inputFilename.value = `${safeSubject}.eml`;
 
-    // Réinit du select
+    // Reset répertoire
     selectRepertoire.innerHTML = `<option value="">Racine du dossier</option>`;
     selectRepertoire.disabled = true;
 
-    // Réinit mode avancé
+    // Reset étape + destinataire
+    selectEtapeParapheur.innerHTML = `<option value="">Aucune</option>`;
+    selectEtapeParapheur.disabled = true;
+    selectDestinataire.innerHTML = `<option value="">— choisir un collaborateur —</option>`;
+    selectDestinataire.disabled = true;
+    formGroupEtape.classList.add("hidden");
+    formGroupDestinataire.classList.add("hidden");
+    destinataireHint.classList.add("hidden");
+
+    // Reset mode avancé
     checkAdvanced.checked = false;
     checkStripAttachments.checked = false;
     advancedSection.classList.add("hidden");
@@ -673,30 +701,87 @@
     saveProgressFill.style.width = "0%";
     saveProgressLabel.textContent = "";
 
+    // Gateway obligatoire : si absente, bandeau + bouton Enregistrer désactivé
+    const gwOk = await gatewayConfigured();
+    if (!gwOk) {
+      gatewayRequiredBanner.classList.remove("hidden");
+      btnModalSave.disabled = true;
+    } else {
+      gatewayRequiredBanner.classList.add("hidden");
+      btnModalSave.disabled = false;
+    }
+
     saveModal.classList.remove("hidden");
 
-    // Charger les répertoires en arrière-plan
-    try {
-      const reps = await SecibAPI.getRepertoiresDossier(dossier.dossierId);
-      if (Array.isArray(reps)) {
-        for (const r of reps) {
-          const opt = document.createElement("option");
-          opt.value = r.RepertoireId;
-          opt.textContent = r.Nom || r.Libelle || `Répertoire #${r.RepertoireId}`;
-          selectRepertoire.appendChild(opt);
-        }
+    if (!gwOk) {
+      return; // Rien à charger sans Gateway
+    }
 
-        // Pré-sélection automatique d'un répertoire "Email/Mail/Courriel" s'il existe
-        const emailRep = reps.find((r) => isEmailRepertoireName(r.Nom || r.Libelle));
-        if (emailRep) {
-          selectRepertoire.value = String(emailRep.RepertoireId);
-          console.log("[SECIB Link] Répertoire Email pré-sélectionné :", emailRep.Nom || emailRep.Libelle);
-        }
+    // Charger répertoires + étapes parapheur + intervenants en parallèle
+    const [repsResult, etapesResult, intervenantsResult] = await Promise.allSettled([
+      SecibAPI.getRepertoiresDossier(dossier.dossierId),
+      etapesParapheurCache !== null
+        ? Promise.resolve(etapesParapheurCache)
+        : SecibAPI.getEtapesParapheur(),
+      intervenantsCache !== null
+        ? Promise.resolve(intervenantsCache)
+        : SecibAPI.getIntervenants(),
+    ]);
+
+    // Répertoires
+    if (repsResult.status === "fulfilled" && Array.isArray(repsResult.value)) {
+      for (const r of repsResult.value) {
+        const opt = document.createElement("option");
+        opt.value = r.RepertoireId;
+        opt.textContent = r.Nom || r.Libelle || `Répertoire #${r.RepertoireId}`;
+        selectRepertoire.appendChild(opt);
       }
-    } catch (e) {
-      console.warn("[SECIB Link] Erreur chargement répertoires", e);
-    } finally {
-      selectRepertoire.disabled = false;
+      const emailRep = repsResult.value.find((r) => isEmailRepertoireName(r.Nom || r.Libelle));
+      if (emailRep) {
+        selectRepertoire.value = String(emailRep.RepertoireId);
+        console.log("[SECIB Link] Répertoire Email pré-sélectionné :", emailRep.Nom || emailRep.Libelle);
+      }
+    } else if (repsResult.status === "rejected") {
+      console.warn("[SECIB Link] Erreur chargement répertoires", repsResult.reason);
+    }
+    selectRepertoire.disabled = false;
+
+    // Étapes + intervenants : les deux doivent être OK, sinon on cache les deux form-groups
+    const etapesOk = etapesResult.status === "fulfilled"
+      && Array.isArray(etapesResult.value)
+      && etapesResult.value.length > 0;
+    const intervenantsOk = intervenantsResult.status === "fulfilled"
+      && Array.isArray(intervenantsResult.value)
+      && intervenantsResult.value.length > 0;
+
+    if (etapesOk && intervenantsOk) {
+      etapesParapheurCache = etapesResult.value;
+      intervenantsCache = intervenantsResult.value;
+
+      for (const e of etapesResult.value) {
+        const opt = document.createElement("option");
+        opt.value = e.EtapeParapheurId;
+        opt.textContent = e.Libelle || `Étape ${e.EtapeParapheurId}`;
+        selectEtapeParapheur.appendChild(opt);
+      }
+      for (const u of intervenantsResult.value) {
+        const opt = document.createElement("option");
+        opt.value = u.UtilisateurId;
+        opt.textContent = u.NomComplet || `${u.Prenom || ""} ${u.Nom || ""}`.trim() || u.Login || `Utilisateur #${u.UtilisateurId}`;
+        selectDestinataire.appendChild(opt);
+      }
+
+      formGroupEtape.classList.remove("hidden");
+      formGroupDestinataire.classList.remove("hidden");
+      selectEtapeParapheur.disabled = false;
+      // selectDestinataire reste disabled tant qu'aucune étape n'est choisie (cf. Task B6)
+    } else {
+      if (etapesResult.status === "rejected") {
+        console.warn("[SECIB Link] Erreur chargement étapes parapheur", etapesResult.reason);
+      }
+      if (intervenantsResult.status === "rejected") {
+        console.warn("[SECIB Link] Erreur chargement intervenants", intervenantsResult.reason);
+      }
     }
   }
 
