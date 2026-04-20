@@ -177,6 +177,35 @@ const SecibAPI = (() => {
     return payload && "data" in payload ? payload.data : payload;
   }
 
+  /**
+   * POST générique vers la gateway NPL-SECIB.
+   * @param {string} path - chemin relatif à /api/v1, ex: "/documents/save-or-update"
+   * @param {object} body - body JSON
+   */
+  async function gatewayPost(path, body) {
+    const config = await getGatewayConfig();
+    const url = `${config.baseUrl}/api/v1${path}`;
+    console.log(`[SECIB Link] Gateway POST ${url}`);
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "X-API-Key": config.apiKey,
+        "Content-Type": "application/json",
+        "Accept": "application/json"
+      },
+      body: JSON.stringify(body)
+    });
+    const text = await response.text();
+    let payload = null;
+    try { payload = JSON.parse(text); } catch {}
+    if (!response.ok) {
+      const code = payload && payload.error && payload.error.code ? payload.error.code : `HTTP_${response.status}`;
+      const msg = payload && payload.error && payload.error.message ? payload.error.message : text.slice(0, 200);
+      throw new Error(`GATEWAY ${code}: ${msg}`);
+    }
+    return payload && "data" in payload ? payload.data : payload;
+  }
+
   // ─── Méthodes publiques ──────────────────────────────────────────
 
   /**
