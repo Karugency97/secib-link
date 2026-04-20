@@ -7,6 +7,33 @@
 // Chaque fenêtre est trackée séparément, peut être focus si déjà ouverte, et reçoit
 // le tabId du contexte courant via URL param + tabs.sendMessage.
 
+// Migration v2.0.0 : supprimer les clés OAuth2 SECIB obsolètes (plus utilisées depuis la migration Gateway)
+browser.runtime.onStartup.addListener(async () => {
+  try {
+    await browser.storage.local.remove([
+      "secib_base_url",
+      "secib_cabinet_id",
+      "secib_client_id",
+      "secib_client_secret",
+    ]);
+  } catch (e) {
+    console.warn("[SECIB Link] Cleanup storage v2.0.0 au startup :", e);
+  }
+});
+
+browser.runtime.onInstalled.addListener(async () => {
+  try {
+    await browser.storage.local.remove([
+      "secib_base_url",
+      "secib_cabinet_id",
+      "secib_client_id",
+      "secib_client_secret",
+    ]);
+  } catch (e) {
+    console.warn("[SECIB Link] Cleanup storage v2.0.0 \u00e0 l'install/upgrade :", e);
+  }
+});
+
 const SIDEBAR_URL = "sidebar/sidebar.html";
 const COMPOSE_PANEL_URL = "compose/panel.html";
 

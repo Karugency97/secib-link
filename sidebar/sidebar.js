@@ -12,10 +12,6 @@
   const btnSettings = document.getElementById("btn-settings");
   const btnSave = document.getElementById("btn-save-settings");
   const btnCancel = document.getElementById("btn-cancel-settings");
-  const inputBaseUrl = document.getElementById("input-base-url");
-  const inputCabinetId = document.getElementById("input-cabinet-id");
-  const inputClientId = document.getElementById("input-client-id");
-  const inputClientSecret = document.getElementById("input-client-secret");
   const inputGatewayUrl = document.getElementById("input-gateway-url");
   const inputGatewayApiKey = document.getElementById("input-gateway-api-key");
   const settingsFeedback = document.getElementById("settings-feedback");
@@ -36,6 +32,12 @@
   const saveModal = document.getElementById("save-modal");
   const saveModalTitle = document.getElementById("save-modal-title");
   const selectRepertoire = document.getElementById("select-repertoire");
+  const selectEtapeParapheur = document.getElementById("select-etape-parapheur");
+  const selectDestinataire = document.getElementById("select-destinataire");
+  const formGroupEtape = document.getElementById("form-group-etape");
+  const formGroupDestinataire = document.getElementById("form-group-destinataire");
+  const destinataireHint = document.getElementById("destinataire-hint");
+  const gatewayRequiredBanner = document.getElementById("gateway-required-banner");
   const inputFilename = document.getElementById("input-filename");
   const saveFeedback = document.getElementById("save-feedback");
   const btnModalClose = document.getElementById("btn-modal-close");
@@ -51,6 +53,19 @@
   const saveProgress = document.getElementById("save-progress");
   const saveProgressFill = document.getElementById("save-progress-fill");
   const saveProgressLabel = document.getElementById("save-progress-label");
+
+  // Caches mémoire (durée de vie de la fenêtre)
+  let etapesParapheurCache = null;
+  let intervenantsCache = null;
+
+  async function gatewayConfigured() {
+    try {
+      const stored = await browser.storage.local.get(["gateway_url", "gateway_api_key"]);
+      return Boolean(stored.gateway_url && stored.gateway_api_key);
+    } catch {
+      return false;
+    }
+  }
 
   // Contexte du mail courant
   let currentMessage = null; // { id, subject, author, date }
@@ -110,20 +125,13 @@
     settingsFeedback.classList.add("hidden");
     try {
       const stored = await browser.storage.local.get([
-        "secib_base_url", "secib_cabinet_id", "secib_client_id", "secib_client_secret",
         "gateway_url", "gateway_api_key"
       ]);
-      inputBaseUrl.value = stored.secib_base_url || "https://secibneo.secib.fr/8.2.1";
-      inputCabinetId.value = stored.secib_cabinet_id || "";
-      inputClientId.value = stored.secib_client_id || "";
-      inputClientSecret.value = stored.secib_client_secret || "";
       inputGatewayUrl.value = stored.gateway_url || "https://apisecib.nplavocat.com";
       inputGatewayApiKey.value = stored.gateway_api_key || "";
       console.log("[SECIB Link] Settings chargés :", {
-        url: stored.secib_base_url,
-        cabinetId: stored.secib_cabinet_id ? "(défini)" : "(vide)",
-        clientId: stored.secib_client_id ? "(défini)" : "(vide)",
-        secret: stored.secib_client_secret ? "(défini)" : "(vide)"
+        gatewayUrl: stored.gateway_url ? "(défini)" : "(vide)",
+        gatewayApiKey: stored.gateway_api_key ? "(défini)" : "(vide)"
       });
     } catch (e) {
       console.error("[SECIB Link] Erreur chargement settings :", e);
@@ -151,7 +159,7 @@
 
   // Auto-sauvegarde au changement de chaque champ (filet de sécurité
   // si le popup se ferme avant un clic sur Enregistrer)
-  for (const input of [inputBaseUrl, inputCabinetId, inputClientId, inputClientSecret, inputGatewayUrl, inputGatewayApiKey]) {
+  for (const input of [inputGatewayUrl, inputGatewayApiKey]) {
     input.addEventListener("change", () => saveSettings(false));
     input.addEventListener("blur", () => saveSettings(false));
   }
@@ -161,37 +169,35 @@
    * @param {boolean} verbose - Si true, affiche le feedback à l'utilisateur.
    */
   async function saveSettings(verbose) {
+    const gatewayUrl = inputGatewayUrl.value.trim().replace(/\/+$/, "");
+    const gatewayApiKey = inputGatewayApiKey.value.trim();
+
+    if (verbose && (!gatewayUrl || !gatewayApiKey)) {
+      showFeedback("error", "L'URL Gateway et l'API Key sont obligatoires");
+      return;
+    }
+
     const payload = {
-      secib_base_url: inputBaseUrl.value.trim(),
-      secib_cabinet_id: inputCabinetId.value.trim(),
-      secib_client_id: inputClientId.value.trim(),
-      secib_client_secret: inputClientSecret.value.trim(),
-      gateway_url: inputGatewayUrl.value.trim().replace(/\/+$/, ""),
-      gateway_api_key: inputGatewayApiKey.value.trim()
+      gateway_url: gatewayUrl,
+      gateway_api_key: gatewayApiKey
     };
 
     try {
       await browser.storage.local.set(payload);
       console.log("[SECIB Link] Paramètres sauvegardés :", {
-        url: payload.secib_base_url,
-        cabinetId: payload.secib_cabinet_id ? "(défini)" : "(vide)",
-        clientId: payload.secib_client_id ? "(défini)" : "(vide)",
-        secret: payload.secib_client_secret ? "(défini)" : "(vide)"
+        gatewayUrl: payload.gateway_url ? "(défini)" : "(vide)",
+        gatewayApiKey: payload.gateway_api_key ? "(défini)" : "(vide)"
       });
 
-      // Vérification immédiate par relecture
-      const check = await browser.storage.local.get([
-        "secib_base_url", "secib_cabinet_id", "secib_client_id", "secib_client_secret"
-      ]);
-
       if (verbose) {
-        if (check.secib_base_url && check.secib_cabinet_id &&
-            check.secib_client_id && check.secib_client_secret) {
+        // Vérification immédiate par relecture
+        const check = await browser.storage.local.get(["gateway_url", "gateway_api_key"]);
+        if (check.gateway_url && check.gateway_api_key) {
           showFeedback("success", "✓ Paramètres enregistrés avec succès");
           showError(null);
           setTimeout(() => init(), 800);
         } else {
-          showFeedback("error", "Tous les champs sont obligatoires");
+          showFeedback("error", "L'URL Gateway et l'API Key sont obligatoires");
         }
       }
     } catch (e) {
@@ -322,12 +328,12 @@
     results.innerHTML = "";
 
     try {
-      // Vérifier la config
-      await SecibAPI.getConfig();
+      // Vérifier la config Gateway (obligatoire v2.0.0+)
+      await SecibAPI.getGatewayConfig();
     } catch (e) {
       showLoader(false);
       renderSenderPlaceholder();
-      showError("Configuration manquante. Cliquez sur l'engrenage pour configurer l'accès API SECIB.");
+      showError("Gateway NPL-SECIB non configurée. Cliquez sur l'engrenage pour configurer l'URL et l'API Key.");
       return;
     }
 
@@ -633,6 +639,22 @@
     } else {
       advancedSection.classList.add("hidden");
     }
+    // Hint destinataire : visible uniquement en mode avancé + dropdowns étape/destinataire visibles
+    if (checkAdvanced.checked && !formGroupDestinataire.classList.contains("hidden")) {
+      destinataireHint.classList.remove("hidden");
+    } else {
+      destinataireHint.classList.add("hidden");
+    }
+  });
+
+  // Quand une étape est choisie, activer le select destinataire. Sinon le désactiver et vider.
+  selectEtapeParapheur.addEventListener("change", () => {
+    if (selectEtapeParapheur.value) {
+      selectDestinataire.disabled = false;
+    } else {
+      selectDestinataire.disabled = true;
+      selectDestinataire.value = "";
+    }
   });
 
   /**
@@ -647,18 +669,27 @@
     saveModalTitle.textContent = `Enregistrer dans ${dossier.code}`;
     saveFeedback.classList.add("hidden");
 
-    // Nom de fichier proposé : sujet du mail + .eml
+    // Nom de fichier proposé
     const safeSubject = (currentMessage.subject || "Mail")
       .replace(/[\\/:*?"<>|]+/g, "-")
       .substring(0, 80)
       .trim();
     inputFilename.value = `${safeSubject}.eml`;
 
-    // Réinit du select
+    // Reset répertoire
     selectRepertoire.innerHTML = `<option value="">Racine du dossier</option>`;
     selectRepertoire.disabled = true;
 
-    // Réinit mode avancé
+    // Reset étape + destinataire
+    selectEtapeParapheur.innerHTML = `<option value="">Aucune</option>`;
+    selectEtapeParapheur.disabled = true;
+    selectDestinataire.innerHTML = `<option value="">— choisir un collaborateur —</option>`;
+    selectDestinataire.disabled = true;
+    formGroupEtape.classList.add("hidden");
+    formGroupDestinataire.classList.add("hidden");
+    destinataireHint.classList.add("hidden");
+
+    // Reset mode avancé
     checkAdvanced.checked = false;
     checkStripAttachments.checked = false;
     advancedSection.classList.add("hidden");
@@ -673,30 +704,87 @@
     saveProgressFill.style.width = "0%";
     saveProgressLabel.textContent = "";
 
+    // Gateway obligatoire : si absente, bandeau + bouton Enregistrer désactivé
+    const gwOk = await gatewayConfigured();
+    if (!gwOk) {
+      gatewayRequiredBanner.classList.remove("hidden");
+      btnModalSave.disabled = true;
+    } else {
+      gatewayRequiredBanner.classList.add("hidden");
+      btnModalSave.disabled = false;
+    }
+
     saveModal.classList.remove("hidden");
 
-    // Charger les répertoires en arrière-plan
-    try {
-      const reps = await SecibAPI.getRepertoiresDossier(dossier.dossierId);
-      if (Array.isArray(reps)) {
-        for (const r of reps) {
-          const opt = document.createElement("option");
-          opt.value = r.RepertoireId;
-          opt.textContent = r.Nom || r.Libelle || `Répertoire #${r.RepertoireId}`;
-          selectRepertoire.appendChild(opt);
-        }
+    if (!gwOk) {
+      return; // Rien à charger sans Gateway
+    }
 
-        // Pré-sélection automatique d'un répertoire "Email/Mail/Courriel" s'il existe
-        const emailRep = reps.find((r) => isEmailRepertoireName(r.Nom || r.Libelle));
-        if (emailRep) {
-          selectRepertoire.value = String(emailRep.RepertoireId);
-          console.log("[SECIB Link] Répertoire Email pré-sélectionné :", emailRep.Nom || emailRep.Libelle);
-        }
+    // Charger répertoires + étapes parapheur + intervenants en parallèle
+    const [repsResult, etapesResult, intervenantsResult] = await Promise.allSettled([
+      SecibAPI.getRepertoiresDossier(dossier.dossierId),
+      etapesParapheurCache !== null
+        ? Promise.resolve(etapesParapheurCache)
+        : SecibAPI.getEtapesParapheur(),
+      intervenantsCache !== null
+        ? Promise.resolve(intervenantsCache)
+        : SecibAPI.getIntervenants(),
+    ]);
+
+    // Répertoires
+    if (repsResult.status === "fulfilled" && Array.isArray(repsResult.value)) {
+      for (const r of repsResult.value) {
+        const opt = document.createElement("option");
+        opt.value = r.RepertoireId;
+        opt.textContent = r.Nom || r.Libelle || `Répertoire #${r.RepertoireId}`;
+        selectRepertoire.appendChild(opt);
       }
-    } catch (e) {
-      console.warn("[SECIB Link] Erreur chargement répertoires", e);
-    } finally {
-      selectRepertoire.disabled = false;
+      const emailRep = repsResult.value.find((r) => isEmailRepertoireName(r.Nom || r.Libelle));
+      if (emailRep) {
+        selectRepertoire.value = String(emailRep.RepertoireId);
+        console.log("[SECIB Link] Répertoire Email pré-sélectionné :", emailRep.Nom || emailRep.Libelle);
+      }
+    } else if (repsResult.status === "rejected") {
+      console.warn("[SECIB Link] Erreur chargement répertoires", repsResult.reason);
+    }
+    selectRepertoire.disabled = false;
+
+    // Étapes + intervenants : les deux doivent être OK, sinon on cache les deux form-groups
+    const etapesOk = etapesResult.status === "fulfilled"
+      && Array.isArray(etapesResult.value)
+      && etapesResult.value.length > 0;
+    const intervenantsOk = intervenantsResult.status === "fulfilled"
+      && Array.isArray(intervenantsResult.value)
+      && intervenantsResult.value.length > 0;
+
+    if (etapesOk && intervenantsOk) {
+      etapesParapheurCache = etapesResult.value;
+      intervenantsCache = intervenantsResult.value;
+
+      for (const e of etapesResult.value) {
+        const opt = document.createElement("option");
+        opt.value = e.EtapeParapheurId;
+        opt.textContent = e.Libelle || `Étape ${e.EtapeParapheurId}`;
+        selectEtapeParapheur.appendChild(opt);
+      }
+      for (const u of intervenantsResult.value) {
+        const opt = document.createElement("option");
+        opt.value = u.UtilisateurId;
+        opt.textContent = u.NomComplet || `${u.Prenom || ""} ${u.Nom || ""}`.trim() || u.Login || `Utilisateur #${u.UtilisateurId}`;
+        selectDestinataire.appendChild(opt);
+      }
+
+      formGroupEtape.classList.remove("hidden");
+      formGroupDestinataire.classList.remove("hidden");
+      selectEtapeParapheur.disabled = false;
+      // selectDestinataire reste disabled tant qu'aucune étape n'est choisie (cf. Task B6)
+    } else {
+      if (etapesResult.status === "rejected") {
+        console.warn("[SECIB Link] Erreur chargement étapes parapheur", etapesResult.reason);
+      }
+      if (intervenantsResult.status === "rejected") {
+        console.warn("[SECIB Link] Erreur chargement intervenants", intervenantsResult.reason);
+      }
     }
   }
 
@@ -734,6 +822,14 @@
     }
 
     const repId = selectRepertoire.value ? parseInt(selectRepertoire.value, 10) : null;
+    const etapeId = selectEtapeParapheur.value || null;
+    const destinataireId = selectDestinataire.value ? parseInt(selectDestinataire.value, 10) : null;
+
+    // Validation client-side : étape sans destinataire → erreur (contrainte SECIB)
+    if (etapeId && !destinataireId) {
+      showSaveFeedback("error", "Choisissez un destinataire pour l'étape parapheur");
+      return;
+    }
     const isAdvanced = checkAdvanced.checked;
     const stripAttachments = isAdvanced && checkStripAttachments.checked;
 
@@ -746,6 +842,8 @@
       fileName,
       dossierId: currentDossier.dossierId,
       repertoireId: repId,
+      etapeParapheurId: etapeId,
+      destinataireId: destinataireId,
       stripAttachments
     });
 
@@ -788,7 +886,9 @@
           dossierId: item.dossierId,
           repertoireId: item.repertoireId,
           contentBase64: base64,
-          isAnnexe: item.kind === "attachment"
+          isAnnexe: item.kind === "attachment",
+          etapeParapheurId: item.etapeParapheurId || null,
+          destinataireId: item.destinataireId || null
         });
         done++;
         updateProgress(done, uploads.length, label);
